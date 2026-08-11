@@ -1,4 +1,4 @@
-console.log("RESPOSTA IA COMPLETA:", JSON.stringify(result));const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -102,6 +102,13 @@ export default {
               }
             );
 
+          // DEBUG:
+          // mostra nos logs exatamente o que a IA devolveu
+          console.log(
+            "RESPOSTA IA COMPLETA:",
+            JSON.stringify(result)
+          );
+
           const texto =
             typeof result?.answer === "string"
               ? result.answer
@@ -110,6 +117,11 @@ export default {
                 : "";
 
           if (!texto) {
+
+            console.log(
+              "IA SEM TEXTO. RESULTADO:",
+              JSON.stringify(result)
+            );
 
             resultados.push({
               nome,
@@ -120,10 +132,20 @@ export default {
             continue;
           }
 
+          console.log(
+            "TEXTO EXTRAÍDO DA IA:",
+            texto
+          );
+
           const dados =
             limparJSON(texto);
 
           if (!dados) {
+
+            console.log(
+              "NÃO FOI POSSÍVEL CONVERTER PARA JSON:",
+              texto
+            );
 
             resultados.push({
               nome,
@@ -145,6 +167,12 @@ export default {
 
         } catch (erroImagem) {
 
+          console.log(
+            "ERRO AO ANALISAR IMAGEM:",
+            erroImagem?.message ||
+            String(erroImagem)
+          );
+
           resultados.push({
             nome,
             tipo: tipoEscolhido,
@@ -161,6 +189,12 @@ export default {
       });
 
     } catch (erro) {
+
+      console.log(
+        "ERRO GERAL:",
+        erro?.message ||
+        String(erro)
+      );
 
       return resposta({
         ok: false,
