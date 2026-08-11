@@ -1,4 +1,4 @@
-const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+console.log("RESPOSTA IA COMPLETA:", JSON.stringify(result));const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
