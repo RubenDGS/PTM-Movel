@@ -1,26 +1,22 @@
 const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
-const contentType =
-  request.headers.get("content-type") || "";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type"
 };
-console.log("CONTENT-TYPE:", contentType);
-console.log("URL:", request.url);
-export default {} else if (contentType.includes("application/json")) {
 
-  const body = await request.json();
+export default {
   async fetch(request, env) {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS });
-    }console.log("JSON RECEBIDO - CAMPOS:", Object.keys(body));
+    }
 
     if (request.method !== "POST") {
       return resposta({
         ok: false,
-        erro: "Usa POST para analisar a chapa."
+        erro: "Método não permitido."
       }, 405);
     }
 
@@ -36,158 +32,231 @@ export default {} else if (contentType.includes("application/json")) {
       const contentType =
         request.headers.get("content-type") || "";
 
-      let image = "";
+      if (!contentType.includes("application/json")) {
+        return resposta({
+          ok: false,
+          erro: "O pedido deve ser enviado em JSON."
+        }, 400);
+      }
 
-      if (contentType.includes("multipart/form-data")) {
+      const body = await request.json();
 
-        const form = await request.formData();
+      const images =
+        Array.isArray(body.images)
+          ? body.images
+          : [];
 
-        const file =
-          form.get("image") ||
-          form.get("imagem") ||
-          form.get("file") ||
-          form.get("foto");
+      if (!images.length) {
+        return resposta({
+          ok: false,
+          erro: "Não foram recebidas fotografias."
+        }, 400);
+      }
 
-        if (!(file instanceof File)) {
-          return resposta({
-            ok: false,
-            erro: "Não foi recebida nenhuma imagem."
-          }, 400);
-        }
+      const resultados = [];
 
-        image = await ficheiroParaDataURI(file);
+      for (const item of images) {
 
-      } else if (contentType.includes("application/json")) {
+        const nome =
+          item.name ||
+          item.nome ||
+          "Fotografia";
 
-        const body = await request.json();
+        const tipoEscolhido =
+          item.tipo ||
+          "AUTO";
 
-        image =
-          body.image ||
-          body.imagem ||
+        const image =
+          item.image ||
+          item.imagem ||
           "";
 
         if (!image) {
-          return resposta({
-            ok: false,
-            erro: "Não foi recebida nenhuma imagem."
-          }, 400);
+
+          resultados.push({
+            nome,
+            tipo: tipoEscolhido,
+            erro: "Imagem não recebida."
+          });
+
+          continue;
         }
 
-      } else {
+        try {
 
-        return resposta({
-          ok: false,
-          erro: "Formato não suportado."
-        }, 415);
+          const question = criarPergunta(
+            tipoEscolhido
+          );
+
+          const result =
+            await env.AI.run(
+              MODEL,
+              {
+                task: "query",
+                image,
+                question,
+                reasoning: false,
+                temperature: 0,
+                max_tokens: 5000,
+                stream: false
+              }
+            );
+
+          const texto =
+            typeof result?.answer === "string"
+              ? result.answer
+              : typeof result === "string"
+                ? result
+                : "";
+
+          if (!texto) {
+
+            resultados.push({
+              nome,
+              tipo: tipoEscolhido,
+              erro: "A IA não devolveu resultado."
+            });
+
+            continue;
+          }
+
+          const dados =
+            limparJSON(texto);
+
+          if (!dados) {
+
+            resultados.push({
+              nome,
+              tipo: tipoEscolhido,
+              erro: "A IA devolveu uma resposta inválida."
+            });
+
+            continue;
+          }
+
+          const verificados =
+            verificarDados(dados);
+
+          resultados.push({
+            nome,
+            tipo: tipoEscolhido,
+            resultado: verificados
+          });
+
+        } catch (erroImagem) {
+
+          resultados.push({
+            nome,
+            tipo: tipoEscolhido,
+            erro:
+              erroImagem?.message ||
+              String(erroImagem)
+          });
+        }
       }
 
-      const question = `
-Analisa cuidadosamente a fotografia de uma chapa
+      return resposta({
+        ok: true,
+        resultados
+      });
+
+    } catch (erro) {
+
+      return resposta({
+        ok: false,
+        erro:
+          erro?.message ||
+          String(erro)
+      }, 500);
+    }
+  }
+};
+
+
+function criarPergunta(tipoEscolhido) {
+
+  return `
+Analisa cuidadosamente esta fotografia de uma chapa
 de características de equipamento elétrico.
 
-Pode ser:
+TIPO INDICADO PELO UTILIZADOR:
+${tipoEscolhido}
 
+Se estiver indicado AUTO, identifica o tipo pela imagem.
+
+O equipamento pode ser:
 - transformador
 - regulador/comutador de tomadas
 - travessia/bushing
 
-A leitura tem de ser rigorosa.
-
 REGRAS OBRIGATÓRIAS:
 
-1. Usa APENAS informação realmente visível na fotografia.
+1. Usa APENAS informação realmente visível.
 
 2. NÃO inventes valores.
 
-3. NÃO calcules valores que não estejam escritos.
+3. NÃO calcules nem deduzas valores que não estejam escritos.
 
-4. NÃO deduzas um campo através de outro.
+4. Se um campo não estiver legível, devolve "".
 
-5. Se um campo não estiver claramente legível,
-devolve uma string vazia "".
+5. Não repitas um valor em vários campos.
 
-6. Não repitas o mesmo valor em vários campos
-só porque não consegues identificar os restantes.
+6. Mantém as unidades exatamente como aparecem.
 
-7. Mantém as unidades exatamente como aparecem.
+7. MVA é potência.
+Nunca uses MVA como:
+frequência, tensão, corrente, ano,
+número de fases, arrefecimento ou massa.
 
-8. "MVA" corresponde a potência.
-Um valor em MVA nunca pode ser usado como:
-- frequência
-- tensão
-- corrente
-- ano
-- número de fases
-- arrefecimento
-- massa
+8. Frequência só pode ser preenchida
+quando estiver explicitamente indicada em Hz.
 
-9. Frequência só pode ser preenchida quando estiver
-explicitamente identificada em Hz.
+9. Tensão deve corresponder a V ou kV.
 
-10. Tensão deve corresponder a valores identificados
-como V ou kV.
+10. Corrente deve corresponder a A ou kA.
 
-11. Corrente deve corresponder a valores identificados
-como A ou kA.
+11. Ano só deve ser preenchido
+quando existir claramente um ano.
 
-12. Ano só deve ser preenchido quando existir
-claramente um ano ou data de fabrico.
+12. Número de série só quando estiver
+explicitamente identificado.
 
-13. Número de série apenas quando estiver associado
-a indicação como:
-serial
-serial number
-ser.
-nº
-nr.
-factory number
-ou equivalente.
+13. Não confundas AT com BT.
 
-14. Não confundas AT com BT.
+14. Não confundas:
+massa total,
+massa de óleo,
+massa de transporte.
 
-15. Não confundas:
-- massa total
-- massa de óleo
-- massa de transporte
-
-16. Não confundas temperaturas com outros valores.
-
-17. Para reguladores:
-lê todas as posições que estiverem visíveis.
+15. Para reguladores:
+lê todas as posições visíveis.
 Não inventes posições intermédias.
 
-18. Para travessias/bushings:
-procura especificamente:
-- fabricante
-- tipo/modelo
-- número de série
-- tensão nominal
-- tensão máxima
-- corrente nominal
-- BIL
-- C1
-- C2
-- fator de dissipação de C1
-- fator de dissipação de C2
+16. Para travessias procura:
+fabricante,
+modelo/tipo,
+número de série,
+tensão nominal,
+tensão máxima,
+corrente nominal,
+BIL,
+C1,
+C2,
+FD C1,
+FD C2.
 
-19. NÃO inventes a fase da travessia.
-Só preenche fase_travessia se estiver claramente
-indicada na própria imagem.
+17. NÃO inventes a fase da travessia.
 
-20. Se não conseguires identificar seguramente
-o tipo de chapa, usa "desconhecido".
+18. Se não conseguires identificar o tipo,
+usa "desconhecido".
 
-21. Faz uma segunda verificação mental antes
-de devolver o resultado:
-confirma que cada valor pertence realmente
-ao campo onde foi colocado.
+19. Revê cada campo antes de responder.
 
-22. Responde SOMENTE com JSON válido.
-Não escrevas explicações.
-Não uses markdown.
-Não uses blocos de código.
+20. Responde SOMENTE com JSON válido.
+Sem explicações.
+Sem markdown.
 
-Devolve exatamente esta estrutura:
+Estrutura:
 
 {
   "tipo_chapa": "",
@@ -199,7 +268,6 @@ Devolve exatamente esta estrutura:
   "norma": "",
 
   "dados": {
-
     "potencia_nominal": "",
     "numero_fases": "",
     "frequencia": "",
@@ -242,71 +310,11 @@ Devolve exatamente esta estrutura:
   },
 
   "outros_campos_visiveis": {},
-
   "duvidas_leitura": [],
-
   "confianca": ""
 }
 `;
-
-      const result = await env.AI.run(
-        MODEL,
-        {
-          task: "query",
-          image: image,
-          question: question,
-          reasoning: false,
-          temperature: 0,
-          max_tokens: 5000,
-          stream: false
-        }
-      );
-
-      const texto =
-        typeof result?.answer === "string"
-          ? result.answer
-          : typeof result === "string"
-            ? result
-            : "";
-
-      if (!texto) {
-
-        return resposta({
-          ok: false,
-          erro: "A IA não devolveu texto."
-        }, 502);
-      }
-
-      const dados = limparJSON(texto);
-
-      if (!dados) {
-
-        return resposta({
-          ok: false,
-          erro: "A resposta da IA não era JSON válido.",
-          texto_extraido: texto
-        }, 502);
-      }
-
-      const verificados =
-        verificarDados(dados);
-
-      return resposta({
-        ok: true,
-        dados: verificados
-      });
-
-    } catch (erro) {
-
-      return resposta({
-        ok: false,
-        erro:
-          erro?.message ||
-          String(erro)
-      }, 500);
-    }
-  }
-};
+}
 
 
 function limparJSON(texto) {
@@ -420,11 +428,8 @@ function verificarDados(x) {
     );
 
 
-  if (
-    !tipos.includes(tipo)
-  ) {
-    tipo =
-      "desconhecido";
+  if (!tipos.includes(tipo)) {
+    tipo = "desconhecido";
   }
 
 
@@ -438,59 +443,43 @@ function verificarDados(x) {
   const campos = [
 
     "potencia_nominal",
-
     "numero_fases",
-
     "frequencia",
-
     "grupo_ligacoes",
-
     "arrefecimento",
 
     "tensao_AT",
-
     "tensao_BT",
 
     "corrente_AT",
-
     "corrente_BT",
 
     "nivel_isolamento_AT",
-
     "nivel_isolamento_BT",
 
     "tensao_curto_circuito_Ucc",
-
     "impedancia_curto_circuito",
 
     "massa_total",
-
     "massa_oleo",
-
     "massa_transporte",
 
     "temperatura_oleo",
-
     "temperatura_enrolamento",
 
     "numero_posicoes_regulador",
-
     "posicoes_regulador",
 
     "tensao_nominal_travessia",
-
     "tensao_maxima_travessia",
-
     "corrente_nominal_travessia",
 
     "BIL",
 
     "C1_pF",
-
     "FD_C1",
 
     "C2_pF",
-
     "FD_C2"
   ];
 
@@ -498,9 +487,7 @@ function verificarDados(x) {
   const dados = {};
 
 
-  for (
-    const campo of campos
-  ) {
+  for (const campo of campos) {
 
     dados[campo] =
       limpar(
@@ -509,39 +496,25 @@ function verificarDados(x) {
   }
 
 
-  /*
-   * Proteção contra o erro que vimos:
-   * um valor em MVA nunca pode
-   * aparecer nestes campos.
-   */
-
   const naoPodeSerMVA = [
 
     "numero_fases",
-
     "frequencia",
-
     "arrefecimento",
 
     "tensao_AT",
-
     "tensao_BT",
 
     "corrente_AT",
-
     "corrente_BT",
 
     "massa_total",
-
     "massa_oleo",
-
     "massa_transporte"
   ];
 
 
-  for (
-    const campo of naoPodeSerMVA
-  ) {
+  for (const campo of naoPodeSerMVA) {
 
     if (
       /\bMVA\b/i.test(
@@ -549,17 +522,10 @@ function verificarDados(x) {
       )
     ) {
 
-      dados[campo] =
-        "";
+      dados[campo] = "";
     }
   }
 
-
-  /*
-   * Frequência:
-   * se vier preenchida,
-   * tem de indicar Hz.
-   */
 
   if (
     dados.frequencia &&
@@ -568,15 +534,9 @@ function verificarDados(x) {
     )
   ) {
 
-    dados.frequencia =
-      "";
+    dados.frequencia = "";
   }
 
-
-  /*
-   * Ano:
-   * aceita apenas um ano plausível.
-   */
 
   let ano =
     limpar(
@@ -590,15 +550,9 @@ function verificarDados(x) {
       .test(ano)
   ) {
 
-    ano =
-      "";
+    ano = "";
   }
 
-
-  /*
-   * Fase:
-   * só existe para travessia.
-   */
 
   let fase =
     limpar(
@@ -610,8 +564,7 @@ function verificarDados(x) {
     tipo !== "travessia"
   ) {
 
-    fase =
-      "";
+    fase = "";
   }
 
 
@@ -634,8 +587,7 @@ function verificarDados(x) {
     )
   ) {
 
-    confianca =
-      "baixa";
+    confianca = "baixa";
   }
 
 
@@ -695,50 +647,6 @@ function verificarDados(x) {
 }
 
 
-async function ficheiroParaDataURI(
-  file
-) {
-
-  const bytes =
-    new Uint8Array(
-      await file.arrayBuffer()
-    );
-
-  let binary =
-    "";
-
-  const tamanho =
-    32768;
-
-
-  for (
-    let i = 0;
-    i < bytes.length;
-    i += tamanho
-  ) {
-
-    binary +=
-      String.fromCharCode(
-        ...bytes.subarray(
-          i,
-          i + tamanho
-        )
-      );
-  }
-
-
-  const mime =
-    file.type ||
-    "image/jpeg";
-
-
-  return (
-    `data:${mime};base64,` +
-    btoa(binary)
-  );
-}
-
-
 function resposta(
   dados,
   status = 200
@@ -751,7 +659,7 @@ function resposta(
       2
     ),
     {
-      status: status,
+      status,
 
       headers: {
         ...CORS,
@@ -764,4 +672,4 @@ function resposta(
       }
     }
   );
-        }
+}
