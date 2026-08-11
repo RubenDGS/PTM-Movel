@@ -84,9 +84,8 @@ export default {
 
         try {
 
-          const question = criarPergunta(
-            tipoEscolhido
-          );
+          const question =
+            criarPergunta(tipoEscolhido);
 
           const result =
             await env.AI.run(
@@ -102,26 +101,21 @@ export default {
               }
             );
 
-          // DEBUG:
-          // mostra nos logs exatamente o que a IA devolveu
           console.log(
             "RESPOSTA IA COMPLETA:",
             JSON.stringify(result)
           );
 
           const texto =
-            typeof result?.answer === "string"
-              ? result.answer
-              : typeof result === "string"
-                ? result
-                : "";
+            typeof result?.result?.answer === "string"
+              ? result.result.answer
+              : typeof result?.answer === "string"
+                ? result.answer
+                : typeof result === "string"
+                  ? result
+                  : "";
 
           if (!texto) {
-
-            console.log(
-              "IA SEM TEXTO. RESULTADO:",
-              JSON.stringify(result)
-            );
 
             resultados.push({
               nome,
@@ -132,25 +126,16 @@ export default {
             continue;
           }
 
-          console.log(
-            "TEXTO EXTRAÍDO DA IA:",
-            texto
-          );
-
           const dados =
             limparJSON(texto);
 
           if (!dados) {
 
-            console.log(
-              "NÃO FOI POSSÍVEL CONVERTER PARA JSON:",
-              texto
-            );
-
             resultados.push({
               nome,
               tipo: tipoEscolhido,
-              erro: "A IA devolveu uma resposta inválida."
+              erro: "A IA devolveu uma resposta inválida.",
+              texto_extraido: texto
             });
 
             continue;
@@ -225,50 +210,71 @@ O equipamento pode ser:
 
 REGRAS OBRIGATÓRIAS:
 
-1. Usa APENAS informação realmente visível.
+1. Usa APENAS informação realmente visível na imagem.
 
 2. NÃO inventes valores.
 
 3. NÃO calcules nem deduzas valores que não estejam escritos.
 
-4. Se um campo não estiver legível, devolve "".
+4. Se um campo não estiver suficientemente legível, devolve "".
 
-5. Não repitas um valor em vários campos.
+5. Não uses palavras genéricas da própria estrutura da chapa
+como se fossem valores.
+Por exemplo:
+"Fabricante" não é um fabricante.
+"Modelo" não é um modelo.
+"Travessia/bushing" não é um modelo.
 
-6. Mantém as unidades exatamente como aparecem.
+6. Não repitas o mesmo valor em vários campos.
 
-7. MVA é potência.
+7. Mantém as unidades exatamente como aparecem.
+
+8. MVA é potência.
 Nunca uses MVA como:
-frequência, tensão, corrente, ano,
-número de fases, arrefecimento ou massa.
+frequência,
+tensão,
+corrente,
+ano,
+número de fases,
+arrefecimento,
+massa.
 
-8. Frequência só pode ser preenchida
-quando estiver explicitamente indicada em Hz.
+9. Frequência só pode ser preenchida quando estiver
+explicitamente indicada em Hz.
 
-9. Tensão deve corresponder a V ou kV.
+10. Tensão deve corresponder a valores em V ou kV.
 
-10. Corrente deve corresponder a A ou kA.
+11. Corrente deve corresponder a valores em A ou kA.
 
-11. Ano só deve ser preenchido
-quando existir claramente um ano.
+12. Ano só deve ser preenchido quando existir claramente
+um ano ou data de fabrico.
 
-12. Número de série só quando estiver
-explicitamente identificado.
+13. Número de série só deve ser preenchido quando estiver
+associado a indicação como:
+serial,
+serial number,
+ser.,
+nº,
+nr.,
+factory number
+ou equivalente.
 
-13. Não confundas AT com BT.
+14. Não confundas AT com BT.
 
-14. Não confundas:
+15. Não confundas:
 massa total,
 massa de óleo,
 massa de transporte.
 
-15. Para reguladores:
-lê todas as posições visíveis.
+16. Não confundas temperaturas com outros valores.
+
+17. Para reguladores:
+lê todas as posições que estiverem realmente visíveis.
 Não inventes posições intermédias.
 
-16. Para travessias procura:
+18. Para travessias procura especificamente:
 fabricante,
-modelo/tipo,
+tipo/modelo,
 número de série,
 tensão nominal,
 tensão máxima,
@@ -276,19 +282,32 @@ corrente nominal,
 BIL,
 C1,
 C2,
-FD C1,
-FD C2.
+fator de dissipação C1,
+fator de dissipação C2.
 
-17. NÃO inventes a fase da travessia.
+19. NÃO inventes a fase da travessia.
+Só preenche fase_travessia se estiver claramente indicada.
 
-18. Se não conseguires identificar o tipo,
+20. Se não conseguires identificar seguramente o tipo,
 usa "desconhecido".
 
-19. Revê cada campo antes de responder.
+21. Se o utilizador escolheu explicitamente:
+TRANSFORMADOR,
+REGULADOR,
+TRAVESSIA A,
+TRAVESSIA B,
+TRAVESSIA C
+ou TRAVESSIA N,
+usa essa indicação como contexto,
+mas continua sem inventar valores.
 
-20. Responde SOMENTE com JSON válido.
+22. Faz uma segunda verificação mental antes de responder:
+cada valor tem de pertencer realmente ao campo onde foi colocado.
+
+23. Responde SOMENTE com JSON válido.
 Sem explicações.
 Sem markdown.
+Sem blocos de código.
 
 Estrutura:
 
@@ -462,7 +481,26 @@ function verificarDados(x) {
     );
 
 
-  if (!tipos.includes(tipo)) {
+  if (
+    tipo.includes("transformador")
+  ) {
+    tipo = "transformador";
+  }
+
+  else if (
+    tipo.includes("regulador")
+  ) {
+    tipo = "regulador";
+  }
+
+  else if (
+    tipo.includes("travessia") ||
+    tipo.includes("bushing")
+  ) {
+    tipo = "travessia";
+  }
+
+  else {
     tipo = "desconhecido";
   }
 
@@ -475,7 +513,6 @@ function verificarDados(x) {
 
 
   const campos = [
-
     "potencia_nominal",
     "numero_fases",
     "frequencia",
@@ -531,7 +568,6 @@ function verificarDados(x) {
 
 
   const naoPodeSerMVA = [
-
     "numero_fases",
     "frequencia",
     "arrefecimento",
@@ -588,6 +624,33 @@ function verificarDados(x) {
   }
 
 
+  let fabricante =
+    limpar(
+      x.fabricante
+    );
+
+
+  if (
+    /^fabricante$/i.test(fabricante)
+  ) {
+    fabricante = "";
+  }
+
+
+  let modelo =
+    limpar(
+      x.modelo_tipo
+    );
+
+
+  if (
+    /^(modelo|tipo|travessia\/bushing|bushing)$/i
+      .test(modelo)
+  ) {
+    modelo = "";
+  }
+
+
   let fase =
     limpar(
       x.fase_travessia
@@ -596,6 +659,15 @@ function verificarDados(x) {
 
   if (
     tipo !== "travessia"
+  ) {
+
+    fase = "";
+  }
+
+
+  if (
+    fase &&
+    !/^(A|B|C|N)$/i.test(fase)
   ) {
 
     fase = "";
@@ -634,14 +706,10 @@ function verificarDados(x) {
       fase,
 
     fabricante:
-      limpar(
-        x.fabricante
-      ),
+      fabricante,
 
     modelo_tipo:
-      limpar(
-        x.modelo_tipo
-      ),
+      modelo,
 
     numero_serie:
       limpar(
@@ -706,4 +774,4 @@ function resposta(
       }
     }
   );
-}
+    }
