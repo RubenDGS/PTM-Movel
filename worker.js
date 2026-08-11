@@ -1,17 +1,21 @@
 const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
-
+const contentType =
+  request.headers.get("content-type") || "";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type"
 };
+console.log("CONTENT-TYPE:", contentType);
+console.log("URL:", request.url);
+export default {} else if (contentType.includes("application/json")) {
 
-export default {
+  const body = await request.json();
   async fetch(request, env) {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS });
-    }
+    }console.log("JSON RECEBIDO - CAMPOS:", Object.keys(body));
 
     if (request.method !== "POST") {
       return resposta({
