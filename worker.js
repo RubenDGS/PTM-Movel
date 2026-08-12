@@ -70,7 +70,7 @@ export default {
           const detalheText = extrairTexto(detalheRaw);
           const detalheJson = parseJSONSeguro(detalheText) || {};
 
-          const combinado = combinar(baseJson, detalheJson);
+          const combinado = combinar(baseJson, detalheJson, tipoEscolhido);
           const resultado = validarEOrganizar(combinado, tipoEscolhido);
 
           resultados.push({
@@ -210,7 +210,7 @@ Responde SOMENTE com JSON válido:
 }`;
 }
 
-function combinar(base, detalhe) {
+function combinar(base, detalhe, tipoEscolhido) {
   return {
     tipo_chapa:base?.tipo_chapa || "",
     fabricante:base?.fabricante || "",
