@@ -14,18 +14,24 @@ export default {
     if (request.method !== "POST" || (url.pathname !== "/" && url.pathname !== "/analisar")) {
       return resposta({ ok:false, erro:"Método ou endereço não permitido." }, 405);
     }
-    if (!env.AI) return resposta({ ok:false, erro:'Binding "AI" não encontrado.' }, 500);
+
+    if (!env.AI) {
+      return resposta({ ok:false, erro:'Binding "AI" não encontrado.' }, 500);
+    }
 
     try {
       const body = await request.json();
       const images = Array.isArray(body.images) ? body.images : [];
-      if (!images.length) return resposta({ ok:false, erro:"Não foram recebidas fotografias." }, 400);
+
+      if (!images.length) {
+        return resposta({ ok:false, erro:"Não foram recebidas fotografias." }, 400);
+      }
 
       const resultados = [];
 
       for (const item of images) {
         const nome = item.name || item.nome || "Fotografia";
-        const tipo = item.tipo || "AUTO";
+        const tipo = String(item.tipo || "AUTO").toUpperCase();
         const image = item.image || item.imagem || "";
 
         if (!image) {
@@ -34,303 +40,384 @@ export default {
         }
 
         try {
-          const question = `Analisa esta chapa técnica para ajudar a preencher o Ativo no PTM.
-Tipo indicado pelo utilizador: ${tipo}.
-
-IMPORTANTE:
-Lê apenas o que está realmente visível. Não inventes.
-A chapa pode estar organizada em tabela, com cabeçalhos AT/BT, colunas e várias linhas.
-Usa o rótulo, a coluna e a unidade para associar cada valor.
-Se um número estiver visível mas a unidade estiver no cabeçalho da linha/coluna, inclui essa unidade no valor devolvido.
-Exemplo: se a linha disser "FREQUÊNCIA Hz" e o valor for "50", devolve "50 Hz".
-Se uma coluna disser "AT kV" e o valor dessa coluna for "60", devolve "60 kV".
-Se um valor estiver legível mas não souberes a que campo pertence, coloca-o em "outros_campos_visiveis" com o respetivo texto/rótulo visível.
-Não repitas o mesmo valor em vários campos.
-Antes de devolver o JSON, revê a chapa uma segunda vez procurando especificamente campos que ficaram vazios.
-
-REGRAS DE UNIDADES:
-- Hz = frequência
-- VA, kVA, MVA = potência
-- V, kV = tensão
-- A, kA = corrente
-- kg, t = massa
-- °C ou C = temperatura
-- pF = capacitância
-- % = Ucc/Uk/Zk ou FD, apenas se o rótulo confirmar
-
-CAMPOS A PROCURAR ATIVAMENTE NA CHAPA:
-- frequência: procura "Hz", "FREQ", "FREQUÊNCIA", "FREQUENCY"
-- tensão AT/BT: procura "AT", "BT", "HV", "LV", "PRIM.", "SEC.", "kV", "V" e respeita a coluna
-- corrente AT/BT: procura "A", "kA", "CURRENT", "CORRENTE" e respeita a coluna
-- grupo de ligações: procura "GRUPO", "VECTOR GROUP", "COUPLING"
-- arrefecimento: procura "REFRIG.", "COOLING", ONAN, ONAF, OFAF, ODAF
-- Ucc/impedância: procura Ucc, Uk, Zk, IMPEDÂNCIA, IMPEDANCE e %
-- massas: procura MASSA/PESO/WEIGHT, TOTAL, ÓLEO/OIL, TRANSPORTE e kg/t
-- temperaturas: procura TEMP., ÓLEO/OIL, ENROLAMENTO/WINDING e °C
-- regulador: procura REGULADOR, COMUTADOR, TAP CHANGER, OLTC, POS., POSITION e tabela de tomadas
-
-REGRAS DE CONTEXTO:
-- "AT" ou "BT" isolados não são fabricante, modelo, grupo de ligações ou arrefecimento.
-- Grupo de ligações deve ser um código como Dyn11, YNyn0, Yd11, etc.
-- Arrefecimento deve ser um código como ONAN, ONAF, OFAF, ODAF, KNAN, KNAF.
-- Ano deve ter 4 dígitos.
-- Só preencher travessia se a foto for uma travessia ou se o utilizador escolheu A/B/C/N.
-- Só preencher regulador se houver claramente regulador/comutador ou tabela de posições.
-- Se não houver certeza, usa "".
-
-Responde SOMENTE com JSON válido nesta estrutura:
-{
- "tipo_chapa":"",
- "fabricante":"",
- "modelo_tipo":"",
- "numero_serie":"",
- "ano":"",
- "norma":"",
- "dados":{
-  "potencia_nominal":"",
-  "numero_fases":"",
-  "frequencia":"",
-  "grupo_ligacoes":"",
-  "arrefecimento":"",
-  "tensao_AT":"",
-  "tensao_BT":"",
-  "corrente_AT":"",
-  "corrente_BT":"",
-  "nivel_isolamento_AT":"",
-  "nivel_isolamento_BT":"",
-  "tensao_curto_circuito_Ucc":"",
-  "impedancia_curto_circuito":"",
-  "massa_total":"",
-  "massa_oleo":"",
-  "massa_transporte":"",
-  "temperatura_oleo":"",
-  "temperatura_enrolamento":"",
-  "numero_posicoes_regulador":"",
-  "posicoes_regulador":"",
-  "tensao_nominal_travessia":"",
-  "tensao_maxima_travessia":"",
-  "corrente_nominal_travessia":"",
-  "BIL":"",
-  "C1_pF":"",
-  "FD_C1":"",
-  "C2_pF":"",
-  "FD_C2":""
- },
- "outros_campos_visiveis":{}
-}`;
-
           const raw = await env.AI.run(MODEL, {
-            task:"query",
+            task: "query",
             image,
-            question,
-            reasoning:false,
-            temperature:0,
-            max_tokens:3000,
-            stream:false
+            question: criarPergunta(tipo),
+            reasoning: false,
+            temperature: 0,
+            max_tokens: 7000,
+            stream: false
           });
 
           const texto = extrairTexto(raw);
-          const dados = limparJSON(texto);
 
-          if (!dados) {
-            resultados.push({ nome, tipo, erro:"A leitura não veio num formato utilizável." });
-          } else {
-            resultados.push({ nome, tipo, resultado:mapearDados(dados, tipo) });
+          if (!texto) {
+            resultados.push({
+              nome,
+              tipo,
+              erro:"Não foi possível transcrever a chapa."
+            });
+            continue;
           }
+
+          resultados.push({
+            nome,
+            tipo,
+            resultado: parseChapa(texto, tipo),
+            texto_lido: texto
+          });
+
         } catch (e) {
-          resultados.push({ nome, tipo, erro:e?.message || String(e) });
+          resultados.push({
+            nome,
+            tipo,
+            erro:e?.message || String(e)
+          });
         }
       }
 
       return resposta({ ok:true, resultados });
+
     } catch (e) {
       return resposta({ ok:false, erro:e?.message || String(e) }, 500);
     }
   }
 };
 
+function criarPergunta(tipo) {
+  return `Faz OCR técnico desta chapa.
 
-function mapearDados(x, tipoEscolhido) {
-  const out = {
-    tipo_chapa: normalizarTipo(x?.tipo_chapa, tipoEscolhido),
-    fabricante: limparTexto(x?.fabricante),
-    modelo_tipo: limparTexto(x?.modelo_tipo),
-    numero_serie: limparTexto(x?.numero_serie),
-    ano: limparTexto(x?.ano),
-    norma: limparTexto(x?.norma),
-    dados: {
-      potencia_nominal:"",
-      numero_fases:"",
-      frequencia:"",
-      grupo_ligacoes:"",
-      arrefecimento:"",
-      tensao_AT:"",
-      tensao_BT:"",
-      corrente_AT:"",
-      corrente_BT:"",
-      nivel_isolamento_AT:"",
-      nivel_isolamento_BT:"",
-      tensao_curto_circuito_Ucc:"",
-      impedancia_curto_circuito:"",
-      massa_total:"",
-      massa_oleo:"",
-      massa_transporte:"",
-      temperatura_oleo:"",
-      temperatura_enrolamento:"",
-      numero_posicoes_regulador:"",
-      posicoes_regulador:"",
-      tensao_nominal_travessia:"",
-      tensao_maxima_travessia:"",
-      corrente_nominal_travessia:"",
-      BIL:"",
-      C1_pF:"",
-      FD_C1:"",
-      C2_pF:"",
-      FD_C2:""
-    },
-    outros_campos_visiveis:
-      x?.outros_campos_visiveis && typeof x.outros_campos_visiveis === "object"
-        ? x.outros_campos_visiveis : {}
-  };
+Contexto dado pelo utilizador: ${tipo}
 
-  const d = x?.dados && typeof x.dados === "object" ? x.dados : {};
+NÃO interpretes os valores e NÃO os distribuas por campos.
+NÃO devolvas JSON.
+NÃO inventes.
 
-  // Limpeza de identificação
-  if (!/^(19|20)\d{2}$/.test(out.ano)) out.ano = "";
-  if (/^(AT|BT|EU|HV|LV)$/i.test(out.fabricante)) out.fabricante = "";
-  if (/^(AT|BT|EU|HV|LV)$/i.test(out.modelo_tipo)) out.modelo_tipo = "";
-  if (/^(AT|BT|EU|HV|LV)$/i.test(out.norma)) out.norma = "";
+Transcreve literalmente tudo o que conseguires ler:
+- cabeçalhos
+- rótulos
+- números
+- unidades
+- colunas AT/BT ou HV/LV
+- linhas de tabelas
+- dados do regulador
+- dados de travessias
 
-  // Recolhe todos os valores devolvidos pela IA para os voltar a classificar por unidade.
-  const pares = [];
-  for (const [k,v] of Object.entries(d)) {
-    const s = limparTexto(v);
-    if (s) pares.push({k,v:s});
-  }
-  for (const k of ["fabricante","modelo_tipo","numero_serie","ano","norma"]) {
-    const v = limparTexto(x?.[k]);
-    if (v) pares.push({k,v});
-  }
+Mantém cada linha da chapa numa linha separada.
+Quando houver um cabeçalho de unidade, mantém a unidade junto do cabeçalho.
+Se houver uma tabela, transcreve as colunas e depois cada linha.
+Se algo estiver ilegível escreve [ILEGÍVEL].
 
-  const primeiroPor = re => {
-    const p = pares.find(p => re.test(p.v));
-    return p ? p.v : "";
-  };
-
-  // Unidades fortes: aqui corrigimos trocas como 50 Hz em "ano" e 20 MVA em "frequência".
-  out.dados.frequencia = primeiroPor(/\b\d+(?:[.,]\d+)?\s*Hz\b/i);
-  if (!out.dados.frequencia) {
-    const f0 = limparTexto(d.frequencia);
-    if (/^(?:50|60)(?:[.,]0+)?$/.test(f0)) out.dados.frequencia = f0 + " Hz";
-  }
-  out.dados.potencia_nominal = primeiroPor(/\b\d+(?:[.,]\d+)?\s*(?:MVA|kVA|VA)\b/i);
-
-  // Campos que só aceitamos se o valor original já vier no campo certo E tiver unidade coerente.
-  out.dados.tensao_AT = aceita(d.tensao_AT, /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
-  out.dados.tensao_BT = aceita(d.tensao_BT, /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
-  out.dados.corrente_AT = aceita(d.corrente_AT, /\b\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i);
-  out.dados.corrente_BT = aceita(d.corrente_BT, /\b\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i);
-
-  const fases = limparTexto(d.numero_fases);
-  if (/^(1|3)(?:\s*(?:fase|fases|phase|phases))?$/i.test(fases)) out.dados.numero_fases = fases;
-
-  const grupo = limparTexto(d.grupo_ligacoes);
-  if (grupo && !/^(AT|BT)$/i.test(grupo) && /(?=.*[A-Za-z])(?=.*\d)/.test(grupo)) {
-    out.dados.grupo_ligacoes = grupo;
-  }
-
-  const arref = limparTexto(d.arrefecimento);
-  if (/^(?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF)(?:[\/+\- ](?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF))*$/i.test(arref)) {
-    out.dados.arrefecimento = arref;
-  }
-
-  out.dados.nivel_isolamento_AT = aceita(d.nivel_isolamento_AT, /\b(?:kV|V)\b/i);
-  out.dados.nivel_isolamento_BT = aceita(d.nivel_isolamento_BT, /\b(?:kV|V)\b/i);
-
-  out.dados.tensao_curto_circuito_Ucc = aceita(d.tensao_curto_circuito_Ucc, /%/);
-  out.dados.impedancia_curto_circuito = aceita(d.impedancia_curto_circuito, /(?:%|Ω|ohm)/i);
-
-  out.dados.massa_total = aceita(d.massa_total, /\b(?:kg|t)\b/i);
-  out.dados.massa_oleo = aceita(d.massa_oleo, /\b(?:kg|t)\b/i);
-  out.dados.massa_transporte = aceita(d.massa_transporte, /\b(?:kg|t)\b/i);
-
-  out.dados.temperatura_oleo = aceita(d.temperatura_oleo, /-?\d+(?:[.,]\d+)?\s*°?\s*C\b/i);
-  out.dados.temperatura_enrolamento = aceita(d.temperatura_enrolamento, /-?\d+(?:[.,]\d+)?\s*°?\s*C\b/i);
-
-  // Se o mesmo valor foi repetido em campos incompatíveis, apagamos esses campos.
-  apagarDuplicados(out.dados, [
-    ["tensao_AT","tensao_BT","corrente_AT","corrente_BT"],
-    ["massa_total","massa_oleo","massa_transporte"],
-    ["nivel_isolamento_AT","nivel_isolamento_BT"]
-  ]);
-
-  // Regulador só quando houver contexto
-  const t = String(tipoEscolhido || "").toUpperCase();
-  const reg = t === "REGULADOR" || out.tipo_chapa === "regulador";
-  if (reg) {
-    const np = limparTexto(d.numero_posicoes_regulador);
-    if (/^\d{1,2}$/.test(np) && Number(np) >= 2) out.dados.numero_posicoes_regulador = np;
-    const pos = limparTexto(d.posicoes_regulador);
-    if (pos && pos !== "1") out.dados.posicoes_regulador = pos;
-  }
-
-  // Travessias só quando a foto é realmente de travessia / A B C N
-  const trav = ["A","B","C","N"].includes(t) || out.tipo_chapa === "travessia";
-  if (trav) {
-    out.dados.tensao_nominal_travessia = aceita(d.tensao_nominal_travessia, /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
-    out.dados.tensao_maxima_travessia = aceita(d.tensao_maxima_travessia, /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
-    out.dados.corrente_nominal_travessia = aceita(d.corrente_nominal_travessia, /\b\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i);
-    out.dados.BIL = aceita(d.BIL, /\b(?:kV|V)\b/i);
-    out.dados.C1_pF = aceita(d.C1_pF, /\bpF\b/i);
-    out.dados.C2_pF = aceita(d.C2_pF, /\bpF\b/i);
-
-    const fd1 = limparTexto(d.FD_C1);
-    if (/%/.test(fd1) || /^0?[.,]\d+$/.test(fd1)) out.dados.FD_C1 = fd1;
-    const fd2 = limparTexto(d.FD_C2);
-    if (/%/.test(fd2) || /^0?[.,]\d+$/.test(fd2)) out.dados.FD_C2 = fd2;
-  }
-
-  // Série/norma: nunca aceitar valores que têm unidade elétrica.
-  if (/\b(?:Hz|MVA|kVA|VA|kV|V|kA|A|kg|pF|°C)\b/i.test(out.numero_serie)) out.numero_serie = "";
-  if (/\b(?:Hz|MVA|kVA|VA|kV|V|kA|A|kg|pF|°C)\b/i.test(out.norma)) out.norma = "";
-
-  return out;
+Devolve APENAS a transcrição.`;
 }
 
-function normalizarTipo(v, tipoEscolhido) {
-  const t = String(tipoEscolhido || "").toUpperCase();
-  if (["A","B","C","N"].includes(t)) return "travessia";
-  if (t === "TRANSFORMADOR") return "transformador";
-  if (t === "REGULADOR") return "regulador";
-  const s = limparTexto(v).toLowerCase();
-  if (/transform/.test(s)) return "transformador";
-  if (/regulador|oltc|tap/.test(s)) return "regulador";
-  if (/travessia|bushing/.test(s)) return "travessia";
+function parseChapa(texto, tipo) {
+  const linhas = String(texto || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  const all = linhas.join("\n");
+
+  const r = {
+    tipo_chapa: inferirTipo(all, tipo),
+    fabricante: extrairFabricante(linhas),
+    modelo_tipo: extrairPorRotulo(linhas, [
+      /\bmodelo\b/i, /\bmodel\b/i, /\btype\b/i, /\btipo\b/i
+    ]),
+    numero_serie: extrairPorRotulo(linhas, [
+      /n[ºo°.\s]*de\s*s[eé]rie/i,
+      /\bserial(?:\s*(?:number|no\.?|nº))?\b/i,
+      /\bs\/n\b/i,
+      /\bser\.\b/i,
+      /factory\s*(?:number|no\.?)/i
+    ]),
+    ano: extrairAno(linhas),
+    norma: extrairNorma(all),
+    dados: {
+      potencia_nominal: extrairPotencia(all),
+      numero_fases: extrairFases(linhas),
+      frequencia: extrairFrequencia(all),
+      grupo_ligacoes: extrairGrupo(linhas),
+      arrefecimento: extrairArrefecimento(all, linhas),
+      tensao_AT: extrairATBT(linhas, "AT", "tensao"),
+      tensao_BT: extrairATBT(linhas, "BT", "tensao"),
+      corrente_AT: extrairATBT(linhas, "AT", "corrente"),
+      corrente_BT: extrairATBT(linhas, "BT", "corrente"),
+      nivel_isolamento_AT: extrairATBT(linhas, "AT", "isolamento"),
+      nivel_isolamento_BT: extrairATBT(linhas, "BT", "isolamento"),
+      tensao_curto_circuito_Ucc: extrairUcc(linhas, all),
+      impedancia_curto_circuito: extrairImpedancia(linhas),
+      massa_total: extrairMassa(linhas, ["total"]),
+      massa_oleo: extrairMassa(linhas, ["óleo","oleo","oil"]),
+      massa_transporte: extrairMassa(linhas, ["transporte","transport"]),
+      temperatura_oleo: extrairTemperatura(linhas, ["óleo","oleo","oil"]),
+      temperatura_enrolamento: extrairTemperatura(linhas, ["enrolamento","winding"]),
+      numero_posicoes_regulador: "",
+      posicoes_regulador: "",
+      tensao_nominal_travessia: "",
+      tensao_maxima_travessia: "",
+      corrente_nominal_travessia: "",
+      BIL: "",
+      C1_pF: "",
+      FD_C1: "",
+      C2_pF: "",
+      FD_C2: ""
+    },
+    outros_campos_visiveis: {}
+  };
+
+  const isReg = tipo === "REGULADOR" || r.tipo_chapa === "regulador";
+  if (isReg) {
+    r.dados.numero_posicoes_regulador = extrairNumeroPosicoes(linhas);
+    r.dados.posicoes_regulador = extrairPosicoes(linhas);
+  }
+
+  const isTrav = ["A","B","C","N"].includes(tipo) || r.tipo_chapa === "travessia";
+  if (isTrav) {
+    r.dados.tensao_nominal_travessia = extrairValorComRotulo(linhas, [
+      /tens[aã]o\s*nominal/i, /rated\s*voltage/i
+    ], /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
+
+    r.dados.tensao_maxima_travessia = extrairValorComRotulo(linhas, [
+      /tens[aã]o\s*m[aá]xima/i, /maximum\s*voltage/i, /\bUm\b/i
+    ], /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
+
+    r.dados.corrente_nominal_travessia = extrairValorComRotulo(linhas, [
+      /corrente\s*nominal/i, /rated\s*current/i
+    ], /\b\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i);
+
+    r.dados.BIL = extrairValorComRotulo(linhas, [
+      /\bBIL\b/i, /lightning\s*impulse/i, /\bLI\b/i
+    ], /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i);
+
+    r.dados.C1_pF = extrairValorComRotulo(linhas, [/\bC1\b/i], /\b\d+(?:[.,]\d+)?\s*pF\b/i);
+    r.dados.C2_pF = extrairValorComRotulo(linhas, [/\bC2\b/i], /\b\d+(?:[.,]\d+)?\s*pF\b/i);
+
+    r.dados.FD_C1 = extrairFD(linhas, "C1");
+    r.dados.FD_C2 = extrairFD(linhas, "C2");
+  }
+
+  removerDuplicados(r.dados);
+
+  return r;
+}
+
+function inferirTipo(all, tipo) {
+  if (["A","B","C","N"].includes(tipo)) return "travessia";
+  if (tipo === "TRANSFORMADOR") return "transformador";
+  if (tipo === "REGULADOR") return "regulador";
+  if (/\b(?:bushing|travessia)\b/i.test(all)) return "travessia";
+  if (/\b(?:oltc|tap\s*changer|regulador|comutador)\b/i.test(all)) return "regulador";
+  if (/\b(?:transformador|transformer|transformateur)\b/i.test(all)) return "transformador";
   return "";
 }
 
-function limparTexto(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") return String(v);
-  if (typeof v !== "string") return "";
-  return v.trim();
+function extrairFabricante(linhas) {
+  let v = extrairPorRotulo(linhas, [
+    /fabricante/i, /manufacturer/i, /hersteller/i, /fabricant/i, /\bmarca\b/i
+  ]);
+  if (v) return limparIdentificacao(v);
+
+  // Marcas muito evidentes no topo, sem assumir uma lista fechada.
+  for (const l of linhas.slice(0, 8)) {
+    const s = l.replace(/[|:;]+/g," ").trim();
+    if (/EFACEC/i.test(s)) return s.match(/EFACEC(?:[-\s]+PORTUGAL)?/i)?.[0] || "EFACEC";
+    if (/SIEMENS/i.test(s)) return "SIEMENS";
+    if (/ABB/i.test(s)) return "ABB";
+    if (/TRENCH/i.test(s)) return "TRENCH";
+    if (/MR\b|MASCHINENFABRIK REINHAUSEN/i.test(s)) return "MR";
+  }
+  return "";
 }
 
-function aceita(v, re) {
-  const s = limparTexto(v);
-  return s && re.test(s) ? s : "";
+function limparIdentificacao(v) {
+  v = String(v || "").trim();
+  if (!v || /^(AT|BT|HV|LV|EU)$/i.test(v)) return "";
+  return v;
 }
 
-function apagarDuplicados(obj, grupos) {
-  for (const grupo of grupos) {
-    const mapa = {};
-    for (const k of grupo) {
-      const v = limparTexto(obj[k]).toLowerCase().replace(/\s+/g, " ");
-      if (!v) continue;
-      (mapa[v] ||= []).push(k);
+function extrairPorRotulo(linhas, regexes) {
+  for (const l of linhas) {
+    if (!regexes.some(re => re.test(l))) continue;
+
+    const p = l.split(/[:=]/);
+    if (p.length > 1) {
+      const v = p.slice(1).join(":").trim();
+      if (v && !/\[ILEG[ÍI]VEL\]/i.test(v)) return v;
     }
-    for (const ks of Object.values(mapa)) {
-      if (ks.length > 1) ks.forEach(k => obj[k] = "");
+
+    for (const re of regexes) {
+      if (!re.test(l)) continue;
+      const v = l.replace(re, "").replace(/^[\s:;=\-–—]+/,"").trim();
+      if (v && v !== l && !/\[ILEG[ÍI]VEL\]/i.test(v)) return v;
+    }
+  }
+  return "";
+}
+
+function extrairAno(linhas) {
+  const v = extrairPorRotulo(linhas, [
+    /\bano\b/i, /\byear\b/i, /data\s*(?:de)?\s*fabr/i, /date\s*of\s*manufact/i
+  ]);
+  const m = String(v).match(/\b(?:19|20)\d{2}\b/);
+  return m ? m[0] : "";
+}
+
+function extrairNorma(all) {
+  const m = all.match(/\b(?:CEI|IEC|EN)\s*[-:]?\s*\d[\d\-/.]*/i);
+  return m ? m[0].replace(/\s+/g," ").trim() : "";
+}
+
+function extrairPotencia(all) {
+  const vals = [...all.matchAll(/\b\d+(?:[.,]\d+)?\s*(?:MVA|kVA|VA)\b/gi)].map(m=>m[0]);
+  if (!vals.length) return "";
+  // Se houver várias, devolve a primeira. As futuras versões podem criar vários regimes.
+  return vals[0];
+}
+
+function extrairFrequencia(all) {
+  const m = all.match(/\b(?:50|60)(?:[.,]0+)?\s*Hz\b/i);
+  return m ? m[0] : "";
+}
+
+function extrairFases(linhas) {
+  const v = extrairPorRotulo(linhas, [
+    /n[úu]mero\s*de\s*fases/i, /\bphases?\b/i, /\bfases?\b/i
+  ]);
+  const m = String(v).match(/\b(?:1|3)\b/);
+  return m ? m[0] : "";
+}
+
+function extrairGrupo(linhas) {
+  const v = extrairPorRotulo(linhas, [
+    /grupo\s*(?:de)?\s*liga/i, /vector\s*group/i, /coupling/i
+  ]);
+  if (!v || /^(AT|BT)$/i.test(v)) return "";
+  return /(?=.*[A-Za-z])(?=.*\d)/.test(v) ? v : "";
+}
+
+function extrairArrefecimento(all, linhas) {
+  const v = extrairPorRotulo(linhas, [/arrefecimento/i,/cooling/i,/refrig/i]);
+  const cod = String(v || "").match(/\b(?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF)\b/i);
+  if (cod) return cod[0];
+
+  const m = all.match(/\b(?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF)\b/i);
+  return m ? m[0] : "";
+}
+
+function extrairATBT(linhas, lado, tipo) {
+  const label = lado === "AT"
+    ? /(?:\bAT\b|\bHV\b|primary|prim[aá]rio)/i
+    : /(?:\bBT\b|\bLV\b|secondary|secund[aá]rio)/i;
+
+  const context = tipo === "tensao"
+    ? /tens[aã]o|voltage|tension/i
+    : tipo === "corrente"
+      ? /corrente|current/i
+      : /isolamento|insulation|withstand|BIL|LI|AC/i;
+
+  const unit = tipo === "corrente"
+    ? /\b\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i
+    : /\b\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i;
+
+  for (const l of linhas) {
+    if (!label.test(l) || !context.test(l)) continue;
+    const m = l.match(unit);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function extrairUcc(linhas, all) {
+  const v = extrairValorComRotulo(linhas, [
+    /\bUcc\b/i, /\bUk\b/i, /\bZk\b/i, /tens[aã]o.*curto/i, /short.*circuit/i
+  ], /\b\d+(?:[.,]\d+)?\s*%\b/);
+  if (v) return v;
+
+  const m = all.match(/\b(?:Ucc|Uk|Zk)\b[^\n%]{0,30}(\d+(?:[.,]\d+)?\s*%)/i);
+  return m ? m[1] : "";
+}
+
+function extrairImpedancia(linhas) {
+  return extrairValorComRotulo(linhas, [/imped[aâ]ncia/i,/impedance/i], /\b\d+(?:[.,]\d+)?\s*(?:%|Ω|ohm)\b/i);
+}
+
+function extrairMassa(linhas, palavras) {
+  for (const l of linhas) {
+    const low = l.toLowerCase();
+    if (!palavras.some(p => low.includes(p))) continue;
+    if (!/(massa|peso|weight|mass)/i.test(l)) continue;
+    const m = l.match(/\b\d+(?:[.,]\d+)?\s*(?:kg|t)\b/i);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function extrairTemperatura(linhas, palavras) {
+  for (const l of linhas) {
+    const low = l.toLowerCase();
+    if (!palavras.some(p => low.includes(p))) continue;
+    if (!/(temp|temperatura|temperature|rise|eleva[cç][aã]o)/i.test(l)) continue;
+    const m = l.match(/-?\d+(?:[.,]\d+)?\s*°?\s*C\b/i);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function extrairNumeroPosicoes(linhas) {
+  const v = extrairPorRotulo(linhas, [
+    /n[úu]mero.*posi/i, /number.*positions/i, /\bpositions?\b/i
+  ]);
+  const m = String(v).match(/\b\d{1,2}\b/);
+  if (!m) return "";
+  const n = Number(m[0]);
+  return n >= 2 && n <= 50 ? String(n) : "";
+}
+
+function extrairPosicoes(linhas) {
+  const rows = linhas.filter(l =>
+    /\b(?:pos|posi[cç][aã]o|position)\b/i.test(l) &&
+    /\d/.test(l)
+  );
+  return rows.length ? rows.join(" | ") : "";
+}
+
+function extrairValorComRotulo(linhas, rotulos, valorRe) {
+  for (const l of linhas) {
+    if (!rotulos.some(re => re.test(l))) continue;
+    const m = l.match(valorRe);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function extrairFD(linhas, c) {
+  for (const l of linhas) {
+    if (!new RegExp(`(?:FD|tan\\s*delta).*${c}`, "i").test(l)) continue;
+    const m = l.match(/\b(?:0?[.,]\d+|\d+(?:[.,]\d+)?\s*%)\b/);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+function removerDuplicados(d) {
+  const grupos = [
+    ["tensao_AT","tensao_BT","corrente_AT","corrente_BT"],
+    ["massa_total","massa_oleo","massa_transporte"],
+    ["nivel_isolamento_AT","nivel_isolamento_BT"]
+  ];
+  for (const grupo of grupos) {
+    const seen = {};
+    for (const k of grupo) {
+      const v = String(d[k] || "").toLowerCase().replace(/\s+/g," ").trim();
+      if (!v) continue;
+      (seen[v] ||= []).push(k);
+    }
+    for (const ks of Object.values(seen)) {
+      if (ks.length > 1) ks.forEach(k => d[k] = "");
     }
   }
 }
@@ -344,20 +431,8 @@ function extrairTexto(x) {
   return "";
 }
 
-function limparJSON(texto) {
-  let s = String(texto || "").trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "");
-  try { return JSON.parse(s); } catch {}
-  const a = s.indexOf("{"), b = s.lastIndexOf("}");
-  if (a >= 0 && b > a) {
-    try { return JSON.parse(s.slice(a,b+1)); } catch {}
-  }
-  return null;
-}
-
 function resposta(dados, status=200) {
-  return new Response(JSON.stringify(dados), {
+  return new Response(JSON.stringify(dados, null, 2), {
     status,
     headers:{
       ...CORS,
