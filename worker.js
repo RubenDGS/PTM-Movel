@@ -1,777 +1,144 @@
-const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+const VISION_MODEL="@cf/moondream/moondream3.1-9B-A2B";
+const TEXT_MODEL="@cf/openai/gpt-oss-20b";
+const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"POST, OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
-};
+export default{async fetch(request,env){
+  if(request.method==="OPTIONS")return new Response(null,{headers:CORS});
+  if(request.method!=="POST")return resposta({ok:false,erro:"Método não permitido."},405);
+  if(!env.AI)return resposta({ok:false,erro:'Binding "AI" não encontrado.'},500);
+  try{
+    const ct=request.headers.get("content-type")||"";
+    if(!ct.includes("application/json"))return resposta({ok:false,erro:"O pedido deve ser enviado em JSON."},400);
+    const body=await request.json();
+    const images=Array.isArray(body.images)?body.images:[];
+    if(!images.length)return resposta({ok:false,erro:"Não foram recebidas fotografias."},400);
 
-export default {
-  async fetch(request, env) {
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS });
+    const leituras=[];
+    for(const item of images){
+      const nome=item.name||item.nome||"Fotografia";
+      const tipo=item.tipo||"AUTO";
+      const image=item.image||item.imagem||"";
+      if(!image){leituras.push({nome,tipo,texto:"",erro:"Imagem não recebida."});continue}
+      try{
+        const q=`Lê esta chapa de características como OCR técnico.
+Transcreve apenas texto, números, unidades, símbolos e tabelas realmente visíveis.
+NÃO interpretes, NÃO atribuas valores a campos e NÃO inventes texto ausente.
+Mantém unidades como V, kV, A, kA, MVA, Hz, %, kg, t, pF e °C.
+Se houver tabela de posições do regulador, transcreve TODAS as linhas legíveis.
+Se algo estiver ilegível escreve [ILEGÍVEL].
+Contexto dado pelo utilizador para esta foto: ${tipo}.
+Devolve apenas a transcrição da chapa.`;
+        const vr=await env.AI.run(VISION_MODEL,{task:"query",image,question:q,reasoning:false,temperature:0,max_tokens:8000,stream:false});
+        const texto=extrairVisao(vr);
+        leituras.push({nome,tipo,texto:texto||"",erro:texto?"":"Não foi possível ler texto da fotografia."});
+      }catch(e){leituras.push({nome,tipo,texto:"",erro:e?.message||String(e)})}
     }
 
-    if (request.method !== "POST") {
-      return resposta({
-        ok: false,
-        erro: "Método não permitido."
-      }, 405);
-    }
-
-    if (!env.AI) {
-      return resposta({
-        ok: false,
-        erro: 'Binding "AI" não encontrado.'
-      }, 500);
-    }
-
-    try {
-
-      const contentType =
-        request.headers.get("content-type") || "";
-
-      if (!contentType.includes("application/json")) {
-        return resposta({
-          ok: false,
-          erro: "O pedido deve ser enviado em JSON."
-        }, 400);
-      }
-
-      const body = await request.json();
-
-      const images =
-        Array.isArray(body.images)
-          ? body.images
-          : [];
-
-      if (!images.length) {
-        return resposta({
-          ok: false,
-          erro: "Não foram recebidas fotografias."
-        }, 400);
-      }
-
-      const resultados = [];
-
-      for (const item of images) {
-
-        const nome =
-          item.name ||
-          item.nome ||
-          "Fotografia";
-
-        const tipoEscolhido =
-          item.tipo ||
-          "AUTO";
-
-        const image =
-          item.image ||
-          item.imagem ||
-          "";
-
-        if (!image) {
-
-          resultados.push({
-            nome,
-            tipo: tipoEscolhido,
-            erro: "Imagem não recebida."
-          });
-
-          continue;
-        }
-
-        try {
-
-          const question =
-            criarPergunta(tipoEscolhido);
-
-          const result =
-            await env.AI.run(
-              MODEL,
-              {
-                task: "query",
-                image,
-                question,
-                reasoning: false,
-                temperature: 0,
-                max_tokens: 5000,
-                stream: false
-              }
-            );
-
-          console.log(
-            "RESPOSTA IA COMPLETA:",
-            JSON.stringify(result)
-          );
-
-          const texto =
-            typeof result?.result?.answer === "string"
-              ? result.result.answer
-              : typeof result?.answer === "string"
-                ? result.answer
-                : typeof result === "string"
-                  ? result
-                  : "";
-
-          if (!texto) {
-
-            resultados.push({
-              nome,
-              tipo: tipoEscolhido,
-              erro: "A IA não devolveu resultado."
-            });
-
-            continue;
-          }
-
-          const dados =
-            limparJSON(texto);
-
-          if (!dados) {
-
-            resultados.push({
-              nome,
-              tipo: tipoEscolhido,
-              erro: "A IA devolveu uma resposta inválida.",
-              texto_extraido: texto
-            });
-
-            continue;
-          }
-
-          const verificados =
-            verificarDados(dados);
-
-          resultados.push({
-            nome,
-            tipo: tipoEscolhido,
-            resultado: verificados
-          });
-
-        } catch (erroImagem) {
-
-          console.log(
-            "ERRO AO ANALISAR IMAGEM:",
-            erroImagem?.message ||
-            String(erroImagem)
-          );
-
-          resultados.push({
-            nome,
-            tipo: tipoEscolhido,
-            erro:
-              erroImagem?.message ||
-              String(erroImagem)
-          });
-        }
-      }
-
-      return resposta({
-        ok: true,
-        resultados
-      });
-
-    } catch (erro) {
-
-      console.log(
-        "ERRO GERAL:",
-        erro?.message ||
-        String(erro)
-      );
-
-      return resposta({
-        ok: false,
-        erro:
-          erro?.message ||
-          String(erro)
-      }, 500);
-    }
-  }
-};
-
-
-function criarPergunta(tipoEscolhido) {
-
-  return `
-Analisa cuidadosamente esta fotografia de uma chapa
-de características de equipamento elétrico.
-
-TIPO INDICADO PELO UTILIZADOR:
-${tipoEscolhido}
-
-Se estiver indicado AUTO, identifica o tipo pela imagem.
-
-O equipamento pode ser:
-- transformador
-- regulador/comutador de tomadas
-- travessia/bushing
-
-REGRAS OBRIGATÓRIAS:
-
-1. Usa APENAS informação realmente visível na imagem.
-
-2. NÃO inventes valores.
-
-3. NÃO calcules nem deduzas valores que não estejam escritos.
-
-4. Se um campo não estiver suficientemente legível, devolve "".
-
-5. Não uses palavras genéricas da própria estrutura da chapa
-como se fossem valores.
-Por exemplo:
-"Fabricante" não é um fabricante.
-"Modelo" não é um modelo.
-"Travessia/bushing" não é um modelo.
-
-6. Não repitas o mesmo valor em vários campos.
-
-7. Mantém as unidades exatamente como aparecem.
-
-8. MVA é potência.
-Nunca uses MVA como:
-frequência,
-tensão,
-corrente,
-ano,
-número de fases,
-arrefecimento,
-massa.
-
-9. Frequência só pode ser preenchida quando estiver
-explicitamente indicada em Hz.
-
-10. Tensão deve corresponder a valores em V ou kV.
-
-11. Corrente deve corresponder a valores em A ou kA.
-
-12. Ano só deve ser preenchido quando existir claramente
-um ano ou data de fabrico.
-
-13. Número de série só deve ser preenchido quando estiver
-associado a indicação como:
-serial,
-serial number,
-ser.,
-nº,
-nr.,
-factory number
-ou equivalente.
-
-14. Não confundas AT com BT.
-
-15. Não confundas:
-massa total,
-massa de óleo,
-massa de transporte.
-
-16. Não confundas temperaturas com outros valores.
-
-17. Para reguladores:
-lê todas as posições que estiverem realmente visíveis.
-Não inventes posições intermédias.
-
-18. Para travessias procura especificamente:
-fabricante,
-tipo/modelo,
-número de série,
-tensão nominal,
-tensão máxima,
-corrente nominal,
-BIL,
-C1,
-C2,
-fator de dissipação C1,
-fator de dissipação C2.
-
-19. NÃO inventes a fase da travessia.
-Só preenche fase_travessia se estiver claramente indicada.
-
-20. Se não conseguires identificar seguramente o tipo,
-usa "desconhecido".
-
-21. Se o utilizador escolheu explicitamente:
-TRANSFORMADOR,
-REGULADOR,
-TRAVESSIA A,
-TRAVESSIA B,
-TRAVESSIA C
-ou TRAVESSIA N,
-usa essa indicação como contexto,
-mas continua sem inventar valores.
-
-22. Faz uma segunda verificação mental antes de responder:
-cada valor tem de pertencer realmente ao campo onde foi colocado.
-
-23. Responde SOMENTE com JSON válido.
-Sem explicações.
-Sem markdown.
-Sem blocos de código.
-
-Estrutura:
-
+    const legiveis=leituras.filter(x=>x.texto);
+    if(!legiveis.length)return resposta({ok:false,erro:"Não foi possível ler nenhuma das fotografias.",leituras},422);
+
+    const fonte=legiveis.map((x,i)=>`FOTO ${i+1}
+NOME: ${x.nome}
+TIPO INDICADO: ${x.tipo}
+TRANSCRIÇÃO:
+${x.texto}`).join("\n\n==============================\n\n");
+
+    const messages=[
+      {role:"system",content:`És um assistente técnico para preparação de dados de ativos no OMICRON PTM / TESTRANO 600.
+Recebes transcrições literais de chapas e apenas colocas os valores lidos nos campos correspondentes.
+Não inventes, não calcules e não completes valores em falta. Se não existir na transcrição usa "".
+Não uses conhecimentos gerais do equipamento para preencher lacunas.
+Um valor só entra num campo quando a transcrição o associa claramente a esse significado.
+Preserva as unidades.
+Se houver várias potências/regimes conserva todas.
+O número de posições do regulador é variável e deve refletir exatamente o que estiver legível.
+Se uma foto estiver marcada A, B, C ou N, usa essa marca apenas para a posição da travessia.
+Uma chapa principal pode conter simultaneamente dados do transformador e do regulador.
+Ucc, Uk, Zk ou tensão de curto-circuito em % entra em short_circuit_voltage_percent.
+Corrente de curto-circuito e duração são campos distintos de Ucc.
+BIL/LI/impulso e AC/TA ficam separados.
+Devolve apenas JSON válido, sem markdown.`},
+      {role:"user",content:`Organiza estas transcrições neste JSON, mantendo exatamente as chaves:
 {
-  "tipo_chapa": "",
-  "fase_travessia": "",
-  "fabricante": "",
-  "modelo_tipo": "",
-  "numero_serie": "",
-  "ano": "",
-  "norma": "",
-
-  "dados": {
-    "potencia_nominal": "",
-    "numero_fases": "",
-    "frequencia": "",
-    "grupo_ligacoes": "",
-    "arrefecimento": "",
-
-    "tensao_AT": "",
-    "tensao_BT": "",
-
-    "corrente_AT": "",
-    "corrente_BT": "",
-
-    "nivel_isolamento_AT": "",
-    "nivel_isolamento_BT": "",
-
-    "tensao_curto_circuito_Ucc": "",
-    "impedancia_curto_circuito": "",
-
-    "massa_total": "",
-    "massa_oleo": "",
-    "massa_transporte": "",
-
-    "temperatura_oleo": "",
-    "temperatura_enrolamento": "",
-
-    "numero_posicoes_regulador": "",
-    "posicoes_regulador": "",
-
-    "tensao_nominal_travessia": "",
-    "tensao_maxima_travessia": "",
-    "corrente_nominal_travessia": "",
-
-    "BIL": "",
-
-    "C1_pF": "",
-    "FD_C1": "",
-
-    "C2_pF": "",
-    "FD_C2": ""
-  },
-
-  "outros_campos_visiveis": {},
-  "duvidas_leitura": [],
-  "confianca": ""
+ "transformer":{
+  "manufacturer":"","model_type":"","serial_number":"","manufacturing_year":"","standard":"",
+  "number_of_phases":"","rated_frequency":"","service":"","vector_group":"","cooling":"","fluid_type":"",
+  "oil_designation":"","total_weight":"","oil_weight":"","untanking_weight":"","transport_weight":"",
+  "ambient_temperature_max":"","oil_temperature_rise":"","winding_temperature_rise":"","sound_level":"",
+  "short_circuit_voltage_percent":"","short_circuit_current":"","short_circuit_duration":""
+ },
+ "power_ratings":[{"cooling":"","rated_power":"","primary_current":"","secondary_current":""}],
+ "windings":[
+  {"name":"AT / Primário","rated_voltage":"","connection":"","max_voltage_um":"","ac_withstand":"","bil_impulse":"","regulation_range":"","rated_current":"","notes":""},
+  {"name":"BT / Secundário","rated_voltage":"","connection":"","max_voltage_um":"","ac_withstand":"","bil_impulse":"","regulation_range":"","rated_current":"","notes":""}
+ ],
+ "tap_changer":{
+  "present":"","type":"","winding":"","manufacturer":"","model_type":"","serial_number":"","manufacturing_year":"",
+  "rated_frequency":"","rated_current":"","max_voltage_um":"","number_of_positions":"","nominal_position":"",
+  "turns_scale":"","entries":[{"position":"","voltage":"","current":"","selector":"","preselector":""}]
+ },
+ "bushings":{
+  "A":{"manufacturer":"","model_type":"","serial_number":"","manufacturing_year":"","rated_frequency":"","max_voltage_um":"","rated_voltage_ac":"","rated_current":"","bil":"","mass":"","mounting_angle":"","fd_c1":"","c1_pf":"","fd_c2":"","c2_pf":"","insulation_type":""},
+  "B":{},"C":{},"N":{}
+ },
+ "additional_visible_data":{},
+ "warnings":[]
 }
-`;
+Remove linhas vazias de entries; se não houver regulador usa [].
+Se não houver power ratings usa [].
+Mantém A/B/C/N e preenche apenas os que tenham foto identificada ou associação inequívoca.
+Em warnings coloca apenas conflitos ou leituras duvidosas realmente presentes.
+
+TRANSCRIÇÕES:
+${fonte}`}
+    ];
+
+    const tr=await env.AI.run(TEXT_MODEL,{messages,stream:false,temperature:0,max_tokens:9000});
+    const textoOrganizado=extrairTexto(tr);
+    const ativo=parseJSON(textoOrganizado);
+    if(!ativo)return resposta({ok:false,erro:"As chapas foram lidas, mas não foi possível organizar os dados.",leituras,texto_organizacao:textoOrganizado},502);
+
+    return resposta({ok:true,ativo:normalizarAtivo(ativo),leituras});
+  }catch(e){return resposta({ok:false,erro:e?.message||String(e)},500)}
+}};
+
+function extrairVisao(r){
+  if(typeof r?.result?.answer==="string")return r.result.answer;
+  if(typeof r?.answer==="string")return r.answer;
+  if(typeof r?.result?.response==="string")return r.result.response;
+  if(typeof r?.response==="string")return r.response;
+  if(typeof r==="string")return r;
+  return "";
 }
-
-
-function limparJSON(texto) {
-
-  let s =
-    String(texto || "")
-      .trim();
-
-  s =
-    s.replace(
-      /^```(?:json)?\s*/i,
-      ""
-    );
-
-  s =
-    s.replace(
-      /\s*```$/i,
-      ""
-    );
-
-  try {
-    return JSON.parse(s);
-  } catch {}
-
-  const inicio =
-    s.indexOf("{");
-
-  const fim =
-    s.lastIndexOf("}");
-
-  if (
-    inicio >= 0 &&
-    fim > inicio
-  ) {
-
-    try {
-
-      return JSON.parse(
-        s.slice(
-          inicio,
-          fim + 1
-        )
-      );
-
-    } catch {}
-  }
-
+function extrairTexto(r){
+  if(typeof r?.response==="string")return r.response;
+  if(typeof r?.result?.response==="string")return r.result.response;
+  if(typeof r?.result?.answer==="string")return r.result.answer;
+  if(typeof r?.answer==="string")return r.answer;
+  if(typeof r==="string")return r;
+  return "";
+}
+function parseJSON(texto){
+  if(!texto)return null;
+  let s=String(texto).trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"").trim();
+  try{return JSON.parse(s)}catch{}
+  const a=s.indexOf("{"),b=s.lastIndexOf("}");
+  if(a>=0&&b>a){try{return JSON.parse(s.slice(a,b+1))}catch{}}
   return null;
 }
-
-
-function verificarDados(x) {
-
-  const limpar = valor => {
-
-    if (
-      valor === null ||
-      valor === undefined
-    ) {
-      return "";
-    }
-
-    if (
-      typeof valor === "number" ||
-      typeof valor === "boolean"
-    ) {
-      return String(valor);
-    }
-
-    if (
-      typeof valor !== "string"
-    ) {
-      return "";
-    }
-
-    const s =
-      valor.trim();
-
-    if (
-      /^(null|undefined|n\/a|na|ilegível|ilegivel)$/i
-        .test(s)
-    ) {
-      return "";
-    }
-
-    return s;
-  };
-
-
-  const normalizar = valor =>
-    limpar(valor)
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(
-        /[\u0300-\u036f]/g,
-        ""
-      );
-
-
-  const tipos = [
-    "transformador",
-    "regulador",
-    "travessia",
-    "desconhecido"
-  ];
-
-
-  let tipo =
-    normalizar(
-      x.tipo_chapa
-    );
-
-
-  if (
-    tipo.includes("transformador")
-  ) {
-    tipo = "transformador";
-  }
-
-  else if (
-    tipo.includes("regulador")
-  ) {
-    tipo = "regulador";
-  }
-
-  else if (
-    tipo.includes("travessia") ||
-    tipo.includes("bushing")
-  ) {
-    tipo = "travessia";
-  }
-
-  else {
-    tipo = "desconhecido";
-  }
-
-
-  const origemDados =
-    x.dados &&
-    typeof x.dados === "object"
-      ? x.dados
-      : {};
-
-
-  const campos = [
-    "potencia_nominal",
-    "numero_fases",
-    "frequencia",
-    "grupo_ligacoes",
-    "arrefecimento",
-
-    "tensao_AT",
-    "tensao_BT",
-
-    "corrente_AT",
-    "corrente_BT",
-
-    "nivel_isolamento_AT",
-    "nivel_isolamento_BT",
-
-    "tensao_curto_circuito_Ucc",
-    "impedancia_curto_circuito",
-
-    "massa_total",
-    "massa_oleo",
-    "massa_transporte",
-
-    "temperatura_oleo",
-    "temperatura_enrolamento",
-
-    "numero_posicoes_regulador",
-    "posicoes_regulador",
-
-    "tensao_nominal_travessia",
-    "tensao_maxima_travessia",
-    "corrente_nominal_travessia",
-
-    "BIL",
-
-    "C1_pF",
-    "FD_C1",
-
-    "C2_pF",
-    "FD_C2"
-  ];
-
-
-  const dados = {};
-
-
-  for (const campo of campos) {
-
-    dados[campo] =
-      limpar(
-        origemDados[campo]
-      );
-  }
-
-
-  const naoPodeSerMVA = [
-    "numero_fases",
-    "frequencia",
-    "arrefecimento",
-
-    "tensao_AT",
-    "tensao_BT",
-
-    "corrente_AT",
-    "corrente_BT",
-
-    "massa_total",
-    "massa_oleo",
-    "massa_transporte"
-  ];
-
-
-  for (const campo of naoPodeSerMVA) {
-
-    if (
-      /\bMVA\b/i.test(
-        dados[campo]
-      )
-    ) {
-
-      dados[campo] = "";
-    }
-  }
-
-
-  if (
-    dados.frequencia &&
-    !/\bHz\b/i.test(
-      dados.frequencia
-    )
-  ) {
-
-    dados.frequencia = "";
-  }
-
-
-  let ano =
-    limpar(
-      x.ano
-    );
-
-
-  if (
-    ano &&
-    !/\b(19|20)\d{2}\b/
-      .test(ano)
-  ) {
-
-    ano = "";
-  }
-
-
-  let fabricante =
-    limpar(
-      x.fabricante
-    );
-
-
-  if (
-    /^fabricante$/i.test(fabricante)
-  ) {
-    fabricante = "";
-  }
-
-
-  let modelo =
-    limpar(
-      x.modelo_tipo
-    );
-
-
-  if (
-    /^(modelo|tipo|travessia\/bushing|bushing)$/i
-      .test(modelo)
-  ) {
-    modelo = "";
-  }
-
-
-  let fase =
-    limpar(
-      x.fase_travessia
-    );
-
-
-  if (
-    tipo !== "travessia"
-  ) {
-
-    fase = "";
-  }
-
-
-  if (
-    fase &&
-    !/^(A|B|C|N)$/i.test(fase)
-  ) {
-
-    fase = "";
-  }
-
-
-  const confiancas = [
-    "alta",
-    "media",
-    "baixa"
-  ];
-
-
-  let confianca =
-    normalizar(
-      x.confianca
-    );
-
-
-  if (
-    !confiancas.includes(
-      confianca
-    )
-  ) {
-
-    confianca = "baixa";
-  }
-
-
-  return {
-
-    tipo_chapa:
-      tipo,
-
-    fase_travessia:
-      fase,
-
-    fabricante:
-      fabricante,
-
-    modelo_tipo:
-      modelo,
-
-    numero_serie:
-      limpar(
-        x.numero_serie
-      ),
-
-    ano:
-      ano,
-
-    norma:
-      limpar(
-        x.norma
-      ),
-
-    dados:
-      dados,
-
-    outros_campos_visiveis:
-      (
-        x.outros_campos_visiveis &&
-        typeof x.outros_campos_visiveis ===
-          "object"
-      )
-        ? x.outros_campos_visiveis
-        : {},
-
-    duvidas_leitura:
-      Array.isArray(
-        x.duvidas_leitura
-      )
-        ? x.duvidas_leitura
-        : [],
-
-    confianca:
-      confianca
-  };
+function normalizarAtivo(x){
+  const o=x&&typeof x==="object"?x:{};
+  o.transformer=o.transformer&&typeof o.transformer==="object"?o.transformer:{};
+  o.power_ratings=Array.isArray(o.power_ratings)?o.power_ratings.filter(Boolean):[];
+  o.windings=Array.isArray(o.windings)?o.windings.filter(Boolean):[];
+  o.tap_changer=o.tap_changer&&typeof o.tap_changer==="object"?o.tap_changer:{};
+  o.tap_changer.entries=Array.isArray(o.tap_changer.entries)?o.tap_changer.entries.filter(e=>e&&Object.values(e).some(v=>String(v||"").trim())):[];
+  o.bushings=o.bushings&&typeof o.bushings==="object"?o.bushings:{};
+  for(const p of["A","B","C","N"])if(!o.bushings[p]||typeof o.bushings[p]!=="object")o.bushings[p]={};
+  o.additional_visible_data=o.additional_visible_data&&typeof o.additional_visible_data==="object"?o.additional_visible_data:{};
+  o.warnings=Array.isArray(o.warnings)?o.warnings:[];
+  return o;
 }
-
-
-function resposta(
-  dados,
-  status = 200
-) {
-
-  return new Response(
-    JSON.stringify(
-      dados,
-      null,
-      2
-    ),
-    {
-      status,
-
-      headers: {
-        ...CORS,
-
-        "Content-Type":
-          "application/json; charset=UTF-8",
-
-        "Cache-Control":
-          "no-store"
-      }
-    }
-  );
-    }
+function resposta(dados,status=200){
+  return new Response(JSON.stringify(dados,null,2),{status,headers:{...CORS,"Content-Type":"application/json; charset=UTF-8","Cache-Control":"no-store"}});
+}
