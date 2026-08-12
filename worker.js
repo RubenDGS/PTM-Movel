@@ -94,7 +94,9 @@ ${fonte}`}
     ];
 
     const tr=await env.AI.run(TEXT_MODEL,{messages,stream:false,temperature:0,max_tokens:9000});
+    console.log("RESPOSTA ORGANIZADOR:",JSON.stringify(tr));
     const textoOrganizado=extrairTexto(tr);
+    console.log("TEXTO ORGANIZADO:",textoOrganizado);
     const ativo=parseJSON(textoOrganizado);
     if(!ativo)return resposta({ok:false,erro:"As chapas foram lidas, mas não foi possível organizar os dados.",leituras,texto_organizacao:textoOrganizado},502);
 
@@ -111,11 +113,18 @@ function extrairVisao(r){
   return "";
 }
 function extrairTexto(r){
+  if(typeof r==="string")return r;
   if(typeof r?.response==="string")return r.response;
   if(typeof r?.result?.response==="string")return r.result.response;
   if(typeof r?.result?.answer==="string")return r.result.answer;
   if(typeof r?.answer==="string")return r.answer;
-  if(typeof r==="string")return r;
+  const c=[r?.choices?.[0]?.message?.content,r?.result?.choices?.[0]?.message?.content,r?.choices?.[0]?.text,r?.result?.choices?.[0]?.text,r?.output_text,r?.result?.output_text];
+  for(const x of c)if(typeof x==="string"&&x.trim())return x;
+  const a=r?.result?.content||r?.content;
+  if(Array.isArray(a)){
+    const t=a.map(x=>typeof x==="string"?x:(typeof x?.text==="string"?x.text:(typeof x?.content==="string"?x.content:""))).filter(Boolean).join("\n");
+    if(t.trim())return t;
+  }
   return "";
 }
 function parseJSON(texto){
