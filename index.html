@@ -126,9 +126,80 @@ $("#analyze").onclick=async()=>{
  try{
   const images=[];for(const o of items)images.push({name:o.f.name,tipo:o.tipo,image:await dataUrl(o.f)});
   const r=await fetch(WORKER,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
-  const data=await r.json();renderOCR(data.leituras||[]);
+  const data=await r.json();
   if(!r.ok||!data.ok)throw new Error(data.erro||"Falha na leitura.");
-  ativo=data.ativo;renderAtivo();$("#result").classList.add("show");
+
+  const resultados=Array.isArray(data.resultados)?data.resultados:[];
+  const leituras=resultados.map(x=>({
+    nome:x.nome||"Fotografia",
+    tipo:x.tipo||"",
+    erro:x.erro||"",
+    texto:x.resultado?JSON.stringify(x.resultado,null,2):""
+  }));
+  renderOCR(leituras);
+
+  const first=resultados.find(x=>x&&x.resultado)?.resultado||{};
+  const d=first.dados||{};
+
+  ativo={
+    identification:{
+      manufacturer:first.fabricante||"",
+      model_type:first.modelo_tipo||"",
+      serial_number:first.numero_serie||"",
+      manufacturing_year:first.ano||"",
+      standard:first.norma||""
+    },
+    transformer:{
+      rated_power:d.potencia_nominal||"",
+      phases:d.numero_fases||"",
+      rated_frequency:d.frequencia||"",
+      vector_group:d.grupo_ligacoes||"",
+      cooling:d.arrefecimento||"",
+      primary_voltage:d.tensao_AT||"",
+      secondary_voltage:d.tensao_BT||"",
+      primary_current:d.corrente_AT||"",
+      secondary_current:d.corrente_BT||"",
+      primary_insulation_level:d.nivel_isolamento_AT||"",
+      secondary_insulation_level:d.nivel_isolamento_BT||"",
+      short_circuit_voltage:d.tensao_curto_circuito_Ucc||"",
+      short_circuit_impedance:d.impedancia_curto_circuito||"",
+      total_mass:d.massa_total||"",
+      oil_mass:d.massa_oleo||"",
+      transport_mass:d.massa_transporte||"",
+      oil_temperature:d.temperatura_oleo||"",
+      winding_temperature:d.temperatura_enrolamento||""
+    },
+    power_ratings:[],
+    windings:[],
+    tap_changer:{
+      present:(d.numero_posicoes_regulador||d.posicoes_regulador)?"Sim":"",
+      number_of_positions:d.numero_posicoes_regulador||"",
+      entries:[]
+    },
+    bushings:{A:{},B:{},C:{},N:{}},
+    additional_visible_data:first.outros_campos_visiveis||{},
+    warnings:[]
+  };
+
+  if(d.posicoes_regulador) ativo.additional_visible_data["Posições do regulador"]=d.posicoes_regulador;
+
+  if(first.tipo_chapa==="travessia"){
+    ativo.bushings.A={
+      manufacturer:first.fabricante||"",
+      model_type:first.modelo_tipo||"",
+      serial_number:first.numero_serie||"",
+      rated_voltage:d.tensao_nominal_travessia||"",
+      max_voltage_um:d.tensao_maxima_travessia||"",
+      rated_current:d.corrente_nominal_travessia||"",
+      bil_impulse:d.BIL||"",
+      c1:d.C1_pF||"",
+      fd_c1:d.FD_C1||"",
+      c2:d.C2_pF||"",
+      fd_c2:d.FD_C2||""
+    };
+  }
+
+  renderAtivo();$("#result").classList.add("show");
   $("#status").innerHTML='<span class="ok">✓ Chapas lidas e dados preparados. Confirma os valores antes de copiar para o PTM.</span>';
  }catch(e){$("#status").innerHTML=`<span class="err">Erro: ${esc(e.message)}</span>`}
  finally{btn.disabled=false;btn.textContent="Ler chapas e preparar PTM"}
