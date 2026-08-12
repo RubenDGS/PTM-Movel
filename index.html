@@ -6,203 +6,287 @@
 <meta name="theme-color" content="#334b59">
 <title>PTM Móvel</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#eef2f5;font-family:Arial,sans-serif;color:#24323a}
-header{background:#334b59;color:#fff;padding:15px 14px}header h1{font-size:20px;margin:0}header small{color:#d9e3e8}
-main{max-width:820px;margin:auto;padding:11px 11px 50px}.card{background:#fff;border:1px solid #ccd5da;border-radius:10px;margin:10px 0;overflow:hidden}
-.card h2{font-size:15px;margin:0;padding:11px 12px;background:#e9eff3}.inside{padding:12px}
-.drop{display:block;border:2px dashed #9eafb9;border-radius:9px;padding:20px 12px;text-align:center;background:#f9fbfc;cursor:pointer}.drop input{display:none}
-.drop strong{display:block;font-size:17px;margin-bottom:5px}.hint{font-size:12px;color:#697982;line-height:1.45}
-.photos{display:grid;gap:8px;margin-top:10px}.photo{display:grid;grid-template-columns:62px 1fr 36px;gap:8px;align-items:center;border:1px solid #d6dde1;border-radius:8px;padding:7px}
-.photo img{width:62px;height:62px;object-fit:cover;border-radius:5px}.photo select{width:100%;padding:8px;border:1px solid #aebbc3;border-radius:6px;background:white}
-.name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:5px}
-button{font-size:14px;padding:10px 12px;border:1px solid #aebbc3;border-radius:7px;background:#fff}.primary{background:#1976b9;color:#fff;border-color:#1976b9;width:100%;font-weight:bold;margin-top:10px}.primary:disabled{opacity:.55}
-.status{font-size:12px;margin-top:9px;color:#667780;line-height:1.45}.ok{color:#287347}.err{color:#a43131}
-.result{display:none}.result.show{display:block}.section{border-top:1px solid #dfe5e8}.section:first-child{border-top:0}
-.section-title{padding:10px 12px;background:#f4f7f9;font-size:14px;font-weight:700}.fields{padding:3px 10px}
-.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,42%) 38px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid #edf0f2}.row:last-child{border-bottom:0}
-.k{font-size:11px;color:#60717a}.v{font-size:12px;font-weight:600;word-break:break-word}.empty{color:#a0aab0;font-weight:400}.copy{padding:6px 0}.copied{background:#dff3e6;color:#23683b}
-table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #d9e0e4;padding:6px;vertical-align:top}th{background:#f1f5f7}.tablebox{overflow:auto;padding:9px}
-.phasebar{display:flex;gap:5px;padding:9px}.phasebar button{flex:1}.phasebar button.active{background:#334b59;color:#fff}
-.controls{display:flex;gap:7px;padding:9px}.controls button{flex:1}.readings{font-size:11px;color:#53636c;white-space:pre-wrap;background:#f8fafb;padding:10px;border-radius:6px;max-height:240px;overflow:auto}.hidden{display:none!important}
+*{box-sizing:border-box}
+body{margin:0;background:#eef2f5;font-family:Arial,sans-serif;color:#24323a}
+header{background:#334b59;color:#fff;padding:16px 14px}
+header h1{margin:0;font-size:22px}
+header div{margin-top:4px;color:#dbe4e9}
+main{max-width:820px;margin:auto;padding:12px}
+.card{background:#fff;border:1px solid #cbd5da;border-radius:12px;margin:12px 0;overflow:hidden}
+.card h2{margin:0;padding:12px;background:#e9eff3;font-size:18px}
+.inside{padding:12px}
+.drop{display:block;border:2px dashed #9eafb9;border-radius:10px;padding:26px 14px;text-align:center;background:#fafcfd}
+.drop input{display:none}
+.drop strong{display:block;font-size:19px;margin-bottom:7px}
+.hint{font-size:13px;color:#6d7a82;line-height:1.45}
+.photo{display:grid;grid-template-columns:70px 1fr 42px;gap:10px;align-items:center;border:1px solid #d8dfe3;border-radius:9px;padding:8px;margin-top:10px}
+.photo img{width:70px;height:70px;object-fit:cover;border-radius:6px}
+.photo select{width:100%;padding:10px;border:1px solid #adb9c0;border-radius:7px;background:white}
+.name{font-size:12px;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button{font-size:14px;border:1px solid #adb9c0;border-radius:8px;padding:10px;background:white}
+.primary{width:100%;margin-top:12px;background:#1976b9;color:#fff;border-color:#1976b9;font-weight:bold;font-size:17px}
+.primary:disabled{opacity:.55}
+.status{margin-top:10px;font-size:13px;line-height:1.45}
+.ok{color:#287347}.err{color:#a43131}
+.result{display:none}.result.show{display:block}
+.section{border-top:1px solid #e0e5e8}
+.section:first-child{border-top:0}
+.section-title{padding:10px 12px;background:#f6f8f9;font-weight:bold}
+.fields{padding:2px 12px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,42%) 40px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #edf1f3}
+.row:last-child{border-bottom:0}
+.k{font-size:12px;color:#61717a}
+.v{font-size:13px;font-weight:600;word-break:break-word}
+.empty{color:#a0aab0;font-weight:400}
+.copy{padding:7px 0}
+.copied{background:#dff3e6;color:#23683b}
+.raw{white-space:pre-wrap;font-family:monospace;font-size:11px;background:#f8fafb;border-radius:8px;padding:10px;max-height:280px;overflow:auto}
+.phasebar{display:flex;gap:6px;padding:10px 12px}
+.phasebar button{flex:1}
+.phasebar .active{background:#334b59;color:#fff}
+.hidden{display:none!important}
 </style>
 </head>
 <body>
-<header><h1>⚡ PTM Móvel</h1><small>Auxiliar para preencher o Ativo no PTM original</small></header>
+<header>
+  <h1>⚡ PTM Móvel</h1>
+  <div>Auxiliar para preencher o Ativo no PTM original</div>
+</header>
+
 <main>
-<section class="card"><h2>📸 Chapas</h2><div class="inside">
-<label class="drop"><strong>Carregar fotografias</strong><span class="hint">Seleciona a chapa do transformador e as fotos disponíveis do regulador/travessias.</span><input id="files" type="file" accept="image/*" multiple></label>
-<div id="photos" class="photos"></div>
-<button id="analyze" class="primary">Ler chapas e preparar PTM</button>
-<div id="status" class="status">Ainda não foram carregadas fotografias.</div>
-</div></section>
+<section class="card">
+  <h2>📸 Chapas</h2>
+  <div class="inside">
+    <label class="drop">
+      <strong>Carregar fotografias</strong>
+      <span class="hint">Seleciona transformador, regulador e/ou travessias. Nas travessias indica A, B, C ou N.</span>
+      <input id="files" type="file" accept="image/*" multiple>
+    </label>
+    <div id="photos"></div>
+    <button id="analyze" class="primary">Ler chapas</button>
+    <div id="status" class="status">Ainda não foram carregadas fotografias.</div>
+  </div>
+</section>
 
-<section id="result" class="card result"><h2>📋 Ativo para copiar para o PTM</h2>
-<div class="controls"><button id="filled">Mostrar só preenchidos</button><button id="resetCopy">Limpar ✓</button></div>
-<div id="out"></div></section>
+<section id="results" class="card result">
+  <h2>📋 Dados para copiar para o PTM</h2>
+  <div id="output"></div>
+</section>
 
-<section id="ocrCard" class="card result"><h2>🔎 Texto lido das chapas</h2><div id="ocr" class="inside"></div></section>
+<section id="rawCard" class="card result">
+  <h2>🔎 Resposta da leitura</h2>
+  <div id="raw" class="inside"></div>
+</section>
 </main>
 
 <script>
 const WORKER="https://ptm-analise.rdgsantos1987-rs.workers.dev/analisar";
-let items=[],ativo=null,onlyFilled=false,phase="A";
+
+let files=[];
+let activePhase="A";
+
 const $=s=>document.querySelector(s);
-const esc=x=>String(x??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-const labels=[["AUTO","Automático"],["TRANSFORMADOR","Transformador"],["REGULADOR","Regulador / OLTC"],["A","Travessia A"],["B","Travessia B"],["C","Travessia C"],["N","Travessia N"]];
+const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 
-$("#files").onchange=e=>{items=[...e.target.files].map(f=>({f,tipo:"AUTO"}));renderPhotos()};
-function renderPhotos(){
- $("#photos").innerHTML=items.map((o,i)=>`<div class="photo"><img id="im${i}"><div><div class="name">${esc(o.f.name)}</div><select data-i="${i}">${labels.map(([v,l])=>`<option value="${v}" ${o.tipo===v?"selected":""}>${l}</option>`).join("")}</select></div><button data-r="${i}">✕</button></div>`).join("");
- items.forEach((o,i)=>$("#im"+i).src=URL.createObjectURL(o.f));
- document.querySelectorAll("select[data-i]").forEach(s=>s.onchange=()=>items[+s.dataset.i].tipo=s.value);
- document.querySelectorAll("button[data-r]").forEach(b=>b.onclick=()=>{items.splice(+b.dataset.r,1);renderPhotos()});
- $("#status").textContent=items.length?`${items.length} fotografia(s) selecionada(s).`:"Ainda não foram carregadas fotografias.";
+const choices=[
+ ["AUTO","Automático"],
+ ["TRANSFORMADOR","Transformador"],
+ ["REGULADOR","Regulador"],
+ ["A","Travessia A"],
+ ["B","Travessia B"],
+ ["C","Travessia C"],
+ ["N","Travessia N"]
+];
+
+$("#files").onchange=e=>{
+  files=[...e.target.files].map(f=>({f,tipo:"AUTO"}));
+  drawPhotos();
+};
+
+function drawPhotos(){
+  $("#photos").innerHTML=files.map((o,i)=>`
+  <div class="photo">
+    <img id="img${i}">
+    <div>
+      <div class="name">${esc(o.f.name)}</div>
+      <select data-i="${i}">
+        ${choices.map(([v,l])=>`<option value="${v}" ${o.tipo===v?"selected":""}>${l}</option>`).join("")}
+      </select>
+    </div>
+    <button data-r="${i}">✕</button>
+  </div>`).join("");
+
+  files.forEach((o,i)=>$("#img"+i).src=URL.createObjectURL(o.f));
+  document.querySelectorAll("select[data-i]").forEach(s=>s.onchange=()=>files[+s.dataset.i].tipo=s.value);
+  document.querySelectorAll("button[data-r]").forEach(b=>b.onclick=()=>{files.splice(+b.dataset.r,1);drawPhotos()});
+  $("#status").textContent=files.length?`${files.length} fotografia(s) selecionada(s).`:"Ainda não foram carregadas fotografias.";
 }
-function dataUrl(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}
-function field(label,value){
- const v=value??"";
- return `<div class="row ${v?"":"is-empty"}"><div class="k">${esc(label)}</div><div class="v ${v?"":"empty"}">${v?esc(v):"Não indicado"}</div><button class="copy" ${v?"":"disabled"} data-v="${esc(v)}">📋</button></div>`;
+
+function fileToDataURL(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
 }
-function section(title,html){return `<div class="section"><div class="section-title">${esc(title)}</div>${html}</div>`}
-function renderBushing(b){return `<div class="fields">
- ${field("Fabricante",b.manufacturer)}${field("Tipo / Modelo",b.model_type)}${field("N.º de série",b.serial_number)}${field("Ano de fabrico",b.manufacturing_year)}
- ${field("Frequência",b.rated_frequency)}${field("Um",b.max_voltage_um)}${field("Tensão nominal / AC",b.rated_voltage_ac)}${field("Corrente nominal",b.rated_current)}
- ${field("BIL",b.bil)}${field("Massa",b.mass)}${field("Ângulo de montagem",b.mounting_angle)}${field("FD C1",b.fd_c1)}${field("C1",b.c1_pf)}${field("FD C2",b.fd_c2)}${field("C2",b.c2_pf)}${field("Tipo de isolamento",b.insulation_type)}
- </div>`;
+
+function valueRow(label,value){
+  const v=value??"";
+  return `<div class="row">
+    <div class="k">${esc(label)}</div>
+    <div class="v ${v?"":"empty"}">${v?esc(v):"Não indicado"}</div>
+    <button class="copy" ${v?"":"disabled"} data-copy="${esc(v)}">📋</button>
+  </div>`;
 }
-function renderAtivo(){
- if(!ativo)return;
- const t=ativo.transformer||{}; let html="";
- html+=section("Dados gerais do transformador",`<div class="fields">
- ${field("Fabricante",t.manufacturer)}${field("Tipo / Modelo",t.model_type)}${field("N.º de série",t.serial_number)}${field("Ano de fabrico",t.manufacturing_year)}
- ${field("Norma",t.standard)}${field("Número de fases",t.number_of_phases)}${field("Frequência nominal",t.rated_frequency)}${field("Serviço",t.service)}
- ${field("Grupo de ligações",t.vector_group)}${field("Arrefecimento",t.cooling)}${field("Tipo de fluido",t.fluid_type)}${field("Óleo isolante",t.oil_designation)}
- ${field("Massa total",t.total_weight)}${field("Massa do óleo",t.oil_weight)}${field("Massa descuvável",t.untanking_weight)}${field("Massa de transporte",t.transport_weight)}
- ${field("Temperatura ambiente máxima",t.ambient_temperature_max)}${field("Elevação temperatura óleo",t.oil_temperature_rise)}${field("Elevação temperatura enrolamento",t.winding_temperature_rise)}
- ${field("Nível sonoro",t.sound_level)}${field("Tensão de curto-circuito Ucc / Uk / Zk",t.short_circuit_voltage_percent)}${field("Corrente de curto-circuito",t.short_circuit_current)}${field("Duração máxima de curto-circuito",t.short_circuit_duration)}
- </div>`);
 
- const pr=Array.isArray(ativo.power_ratings)?ativo.power_ratings:[];
- html+=section("Potências / arrefecimento",`<div class="tablebox"><table><tr><th>Regime</th><th>Potência</th><th>I AT</th><th>I BT</th></tr>${pr.length?pr.map(r=>`<tr><td>${esc(r.cooling)}</td><td>${esc(r.rated_power)}</td><td>${esc(r.primary_current)}</td><td>${esc(r.secondary_current)}</td></tr>`).join(""):`<tr><td colspan="4">Não indicado</td></tr>`}</table></div>`);
-
- const ws=Array.isArray(ativo.windings)?ativo.windings:[];
- html+=section("Enrolamentos",`<div class="tablebox"><table><tr><th>Enrolamento</th><th>Tensão</th><th>Ligação</th><th>Um</th><th>AC/TA</th><th>BIL/Impulso</th><th>Regulação</th><th>Corrente</th><th>Notas</th></tr>${ws.length?ws.map(w=>`<tr><td>${esc(w.name)}</td><td>${esc(w.rated_voltage)}</td><td>${esc(w.connection)}</td><td>${esc(w.max_voltage_um)}</td><td>${esc(w.ac_withstand)}</td><td>${esc(w.bil_impulse)}</td><td>${esc(w.regulation_range)}</td><td>${esc(w.rated_current)}</td><td>${esc(w.notes)}</td></tr>`).join(""):`<tr><td colspan="9">Não indicado</td></tr>`}</table></div>`);
-
- const tc=ativo.tap_changer||{};
- html+=section("Regulador / OLTC",`<div class="fields">
- ${field("Existe regulador / comutador",tc.present)}${field("Tipo",tc.type)}${field("Enrolamento",tc.winding)}${field("Fabricante",tc.manufacturer)}${field("Tipo / Modelo",tc.model_type)}
- ${field("N.º de série",tc.serial_number)}${field("Ano de fabrico",tc.manufacturing_year)}${field("Frequência",tc.rated_frequency)}${field("Corrente nominal",tc.rated_current)}
- ${field("Um",tc.max_voltage_um)}${field("Número de posições",tc.number_of_positions)}${field("Posição nominal",tc.nominal_position)}${field("Voltas / escala",tc.turns_scale)}
- </div>
- <div class="tablebox"><table><tr><th>Pos.</th><th>Tensão</th><th>Corrente</th><th>Seletor</th><th>Pré-seletor</th></tr>
- ${(Array.isArray(tc.entries)&&tc.entries.length)?tc.entries.map(r=>`<tr><td>${esc(r.position)}</td><td>${esc(r.voltage)}</td><td>${esc(r.current)}</td><td>${esc(r.selector)}</td><td>${esc(r.preselector)}</td></tr>`).join(""):`<tr><td colspan="5">Não indicado</td></tr>`}
- </table></div>`);
-
- const bs=ativo.bushings||{};
- html+=section("Travessias",`<div class="phasebar">${["A","B","C","N"].map(p=>`<button class="${phase===p?"active":""}" data-p="${p}">${p}</button>`).join("")}</div>${renderBushing(bs[phase]||{})}`);
-
- const extra=ativo.additional_visible_data||{};
- const extras=Object.entries(extra);
- if(extras.length)html+=section("Informação adicional da chapa",`<div class="fields">${extras.map(([k,v])=>field(k,typeof v==="object"?JSON.stringify(v):v)).join("")}</div>`);
-
- const warnings=Array.isArray(ativo.warnings)?ativo.warnings:[];
- if(warnings.length)html+=section("⚠ A confirmar",`<div class="inside">${warnings.map(x=>`<div>${esc(x)}</div>`).join("")}</div>`);
-
- $("#out").innerHTML=html;
- if(onlyFilled)document.querySelectorAll(".is-empty").forEach(x=>x.classList.add("hidden"));
- document.querySelectorAll(".copy").forEach(b=>b.onclick=async()=>{if(!b.dataset.v)return;try{await navigator.clipboard.writeText(b.dataset.v)}catch{}b.textContent="✓";b.classList.add("copied")});
- document.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{phase=b.dataset.p;renderAtivo()});
+function section(title,rows){
+  return `<div class="section"><div class="section-title">${esc(title)}</div><div class="fields">${rows}</div></div>`;
 }
-function renderOCR(leituras){
- $("#ocr").innerHTML=(leituras||[]).map(x=>`<div style="margin-bottom:12px"><b>${esc(x.nome)} · ${esc(x.tipo)}</b>${x.erro?`<div class="err">${esc(x.erro)}</div>`:`<div class="readings">${esc(x.texto)}</div>`}</div>`).join("");
- $("#ocrCard").classList.add("show");
-}
-$("#filled").onclick=()=>{onlyFilled=!onlyFilled;$("#filled").textContent=onlyFilled?"Mostrar todos":"Mostrar só preenchidos";renderAtivo()};
-$("#resetCopy").onclick=()=>document.querySelectorAll(".copy").forEach(b=>{b.textContent="📋";b.classList.remove("copied")});
-$("#analyze").onclick=async()=>{
- if(!items.length){$("#status").innerHTML='<span class="err">Carrega pelo menos uma fotografia.</span>';return}
- const btn=$("#analyze");btn.disabled=true;btn.textContent="A ler as chapas…";
- $("#status").textContent="Primeiro leio literalmente as chapas. Depois organizo apenas os dados necessários ao PTM.";
- try{
-  const images=[];for(const o of items)images.push({name:o.f.name,tipo:o.tipo,image:await dataUrl(o.f)});
-  const r=await fetch(WORKER,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
-  const data=await r.json();
-  if(!r.ok||!data.ok)throw new Error(data.erro||"Falha na leitura.");
 
+function renderResult(data){
   const resultados=Array.isArray(data.resultados)?data.resultados:[];
-  const leituras=resultados.map(x=>({
-    nome:x.nome||"Fotografia",
-    tipo:x.tipo||"",
-    erro:x.erro||"",
-    texto:x.resultado?JSON.stringify(x.resultado,null,2):""
-  }));
-  renderOCR(leituras);
+  const ok=resultados.filter(x=>x&&x.resultado);
 
-  const first=resultados.find(x=>x&&x.resultado)?.resultado||{};
-  const d=first.dados||{};
-
-  ativo={
-    identification:{
-      manufacturer:first.fabricante||"",
-      model_type:first.modelo_tipo||"",
-      serial_number:first.numero_serie||"",
-      manufacturing_year:first.ano||"",
-      standard:first.norma||""
-    },
-    transformer:{
-      rated_power:d.potencia_nominal||"",
-      phases:d.numero_fases||"",
-      rated_frequency:d.frequencia||"",
-      vector_group:d.grupo_ligacoes||"",
-      cooling:d.arrefecimento||"",
-      primary_voltage:d.tensao_AT||"",
-      secondary_voltage:d.tensao_BT||"",
-      primary_current:d.corrente_AT||"",
-      secondary_current:d.corrente_BT||"",
-      primary_insulation_level:d.nivel_isolamento_AT||"",
-      secondary_insulation_level:d.nivel_isolamento_BT||"",
-      short_circuit_voltage:d.tensao_curto_circuito_Ucc||"",
-      short_circuit_impedance:d.impedancia_curto_circuito||"",
-      total_mass:d.massa_total||"",
-      oil_mass:d.massa_oleo||"",
-      transport_mass:d.massa_transporte||"",
-      oil_temperature:d.temperatura_oleo||"",
-      winding_temperature:d.temperatura_enrolamento||""
-    },
-    power_ratings:[],
-    windings:[],
-    tap_changer:{
-      present:(d.numero_posicoes_regulador||d.posicoes_regulador)?"Sim":"",
-      number_of_positions:d.numero_posicoes_regulador||"",
-      entries:[]
-    },
-    bushings:{A:{},B:{},C:{},N:{}},
-    additional_visible_data:first.outros_campos_visiveis||{},
-    warnings:[]
-  };
-
-  if(d.posicoes_regulador) ativo.additional_visible_data["Posições do regulador"]=d.posicoes_regulador;
-
-  if(first.tipo_chapa==="travessia"){
-    ativo.bushings.A={
-      manufacturer:first.fabricante||"",
-      model_type:first.modelo_tipo||"",
-      serial_number:first.numero_serie||"",
-      rated_voltage:d.tensao_nominal_travessia||"",
-      max_voltage_um:d.tensao_maxima_travessia||"",
-      rated_current:d.corrente_nominal_travessia||"",
-      bil_impulse:d.BIL||"",
-      c1:d.C1_pF||"",
-      fd_c1:d.FD_C1||"",
-      c2:d.C2_pF||"",
-      fd_c2:d.FD_C2||""
-    };
+  if(!ok.length){
+    $("#output").innerHTML=`<div class="inside err">A leitura terminou, mas não encontrou dados utilizáveis.</div>`;
+    $("#results").classList.add("show");
+    return;
   }
 
-  renderAtivo();$("#result").classList.add("show");
-  $("#status").innerHTML='<span class="ok">✓ Chapas lidas e dados preparados. Confirma os valores antes de copiar para o PTM.</span>';
- }catch(e){$("#status").innerHTML=`<span class="err">Erro: ${esc(e.message)}</span>`}
- finally{btn.disabled=false;btn.textContent="Ler chapas e preparar PTM"}
+  const first=ok[0].resultado||{};
+  const d=first.dados||{};
+
+  let html="";
+  html+=section("Transformador / chapa principal",
+    valueRow("Tipo de chapa",first.tipo_chapa)+
+    valueRow("Fabricante",first.fabricante)+
+    valueRow("Tipo / Modelo",first.modelo_tipo)+
+    valueRow("N.º de série",first.numero_serie)+
+    valueRow("Ano",first.ano)+
+    valueRow("Norma",first.norma)+
+    valueRow("Potência nominal",d.potencia_nominal)+
+    valueRow("Número de fases",d.numero_fases)+
+    valueRow("Frequência",d.frequencia)+
+    valueRow("Grupo de ligações",d.grupo_ligacoes)+
+    valueRow("Arrefecimento",d.arrefecimento)+
+    valueRow("Tensão AT",d.tensao_AT)+
+    valueRow("Tensão BT",d.tensao_BT)+
+    valueRow("Corrente AT",d.corrente_AT)+
+    valueRow("Corrente BT",d.corrente_BT)+
+    valueRow("Nível de isolamento AT",d.nivel_isolamento_AT)+
+    valueRow("Nível de isolamento BT",d.nivel_isolamento_BT)+
+    valueRow("Ucc / tensão de curto-circuito",d.tensao_curto_circuito_Ucc)+
+    valueRow("Impedância de curto-circuito",d.impedancia_curto_circuito)+
+    valueRow("Massa total",d.massa_total)+
+    valueRow("Massa do óleo",d.massa_oleo)+
+    valueRow("Massa de transporte",d.massa_transporte)+
+    valueRow("Temperatura do óleo",d.temperatura_oleo)+
+    valueRow("Temperatura do enrolamento",d.temperatura_enrolamento)
+  );
+
+  html+=section("Regulador",
+    valueRow("N.º de posições",d.numero_posicoes_regulador)+
+    valueRow("Posições / tensões",d.posicoes_regulador)
+  );
+
+  html+=`<div class="section"><div class="section-title">Travessias</div>
+    <div class="phasebar">${["A","B","C","N"].map(p=>`<button class="${p===activePhase?"active":""}" data-phase="${p}">${p}</button>`).join("")}</div>
+    <div id="bushingFields" class="fields"></div>
+  </div>`;
+
+  const extras=first.outros_campos_visiveis||{};
+  const extraEntries=Object.entries(extras);
+  if(extraEntries.length){
+    html+=section("Outros campos visíveis",extraEntries.map(([k,v])=>valueRow(k,typeof v==="object"?JSON.stringify(v):v)).join(""));
+  }
+
+  $("#output").innerHTML=html;
+  $("#results").classList.add("show");
+
+  window.__resultados=resultados;
+  renderBushing();
+
+  document.querySelectorAll(".copy").forEach(b=>b.onclick=async()=>{
+    if(!b.dataset.copy)return;
+    try{await navigator.clipboard.writeText(b.dataset.copy)}catch{}
+    b.textContent="✓";b.classList.add("copied");
+  });
+
+  document.querySelectorAll("[data-phase]").forEach(b=>b.onclick=()=>{
+    activePhase=b.dataset.phase;
+    renderResult(data);
+  });
+}
+
+function renderBushing(){
+  const resultados=window.__resultados||[];
+  const item=resultados.find(x=>x&&x.resultado&&String(x.tipo||"").toUpperCase()===activePhase)
+    || resultados.find(x=>x&&x.resultado&&x.resultado.tipo_chapa==="travessia");
+  const r=item?.resultado||{};
+  const d=r.dados||{};
+  $("#bushingFields").innerHTML=
+    valueRow("Fabricante",r.fabricante)+
+    valueRow("Tipo / Modelo",r.modelo_tipo)+
+    valueRow("N.º de série",r.numero_serie)+
+    valueRow("Tensão nominal",d.tensao_nominal_travessia)+
+    valueRow("Tensão máxima",d.tensao_maxima_travessia)+
+    valueRow("Corrente nominal",d.corrente_nominal_travessia)+
+    valueRow("BIL",d.BIL)+
+    valueRow("FD C1",d.FD_C1)+
+    valueRow("C1",d.C1_pF)+
+    valueRow("FD C2",d.FD_C2)+
+    valueRow("C2",d.C2_pF);
+
+  document.querySelectorAll(".copy").forEach(b=>b.onclick=async()=>{
+    if(!b.dataset.copy)return;
+    try{await navigator.clipboard.writeText(b.dataset.copy)}catch{}
+    b.textContent="✓";b.classList.add("copied");
+  });
+}
+
+$("#analyze").onclick=async()=>{
+  if(!files.length){
+    $("#status").innerHTML='<span class="err">Carrega pelo menos uma fotografia.</span>';
+    return;
+  }
+
+  const btn=$("#analyze");
+  btn.disabled=true;
+  btn.textContent="A ler…";
+  $("#status").textContent="A analisar a(s) chapa(s)…";
+
+  try{
+    const images=[];
+    for(const o of files){
+      images.push({name:o.f.name,tipo:o.tipo,image:await fileToDataURL(o.f)});
+    }
+
+    const response=await fetch(WORKER,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({images})
+    });
+
+    const text=await response.text();
+    let data;
+    try{data=JSON.parse(text)}catch{throw new Error("Resposta inválida do serviço de leitura.")}
+
+    $("#raw").innerHTML=`<div class="raw">${esc(JSON.stringify(data,null,2))}</div>`;
+    $("#rawCard").classList.add("show");
+
+    if(!response.ok||!data.ok)throw new Error(data.erro||"Falha na leitura.");
+
+    renderResult(data);
+    $("#status").innerHTML='<span class="ok">✓ Leitura concluída. Confirma os valores antes de os copiar para o PTM.</span>';
+
+  }catch(e){
+    $("#status").innerHTML=`<span class="err">Erro: ${esc(e.message)}</span>`;
+  }finally{
+    btn.disabled=false;
+    btn.textContent="Ler chapas";
+  }
 };
 </script>
-</body></html>
+</body>
+</html>
