@@ -39,8 +39,14 @@ Tipo indicado pelo utilizador: ${tipo}.
 
 IMPORTANTE:
 Lê apenas o que está realmente visível. Não inventes.
+A chapa pode estar organizada em tabela, com cabeçalhos AT/BT, colunas e várias linhas.
+Usa o rótulo, a coluna e a unidade para associar cada valor.
+Se um número estiver visível mas a unidade estiver no cabeçalho da linha/coluna, inclui essa unidade no valor devolvido.
+Exemplo: se a linha disser "FREQUÊNCIA Hz" e o valor for "50", devolve "50 Hz".
+Se uma coluna disser "AT kV" e o valor dessa coluna for "60", devolve "60 kV".
 Se um valor estiver legível mas não souberes a que campo pertence, coloca-o em "outros_campos_visiveis" com o respetivo texto/rótulo visível.
 Não repitas o mesmo valor em vários campos.
+Antes de devolver o JSON, revê a chapa uma segunda vez procurando especificamente campos que ficaram vazios.
 
 REGRAS DE UNIDADES:
 - Hz = frequência
@@ -51,6 +57,17 @@ REGRAS DE UNIDADES:
 - °C ou C = temperatura
 - pF = capacitância
 - % = Ucc/Uk/Zk ou FD, apenas se o rótulo confirmar
+
+CAMPOS A PROCURAR ATIVAMENTE NA CHAPA:
+- frequência: procura "Hz", "FREQ", "FREQUÊNCIA", "FREQUENCY"
+- tensão AT/BT: procura "AT", "BT", "HV", "LV", "PRIM.", "SEC.", "kV", "V" e respeita a coluna
+- corrente AT/BT: procura "A", "kA", "CURRENT", "CORRENTE" e respeita a coluna
+- grupo de ligações: procura "GRUPO", "VECTOR GROUP", "COUPLING"
+- arrefecimento: procura "REFRIG.", "COOLING", ONAN, ONAF, OFAF, ODAF
+- Ucc/impedância: procura Ucc, Uk, Zk, IMPEDÂNCIA, IMPEDANCE e %
+- massas: procura MASSA/PESO/WEIGHT, TOTAL, ÓLEO/OIL, TRANSPORTE e kg/t
+- temperaturas: procura TEMP., ÓLEO/OIL, ENROLAMENTO/WINDING e °C
+- regulador: procura REGULADOR, COMUTADOR, TAP CHANGER, OLTC, POS., POSITION e tabela de tomadas
 
 REGRAS DE CONTEXTO:
 - "AT" ou "BT" isolados não são fabricante, modelo, grupo de ligações ou arrefecimento.
@@ -202,6 +219,10 @@ function mapearDados(x, tipoEscolhido) {
 
   // Unidades fortes: aqui corrigimos trocas como 50 Hz em "ano" e 20 MVA em "frequência".
   out.dados.frequencia = primeiroPor(/\b\d+(?:[.,]\d+)?\s*Hz\b/i);
+  if (!out.dados.frequencia) {
+    const f0 = limparTexto(d.frequencia);
+    if (/^(?:50|60)(?:[.,]0+)?$/.test(f0)) out.dados.frequencia = f0 + " Hz";
+  }
   out.dados.potencia_nominal = primeiroPor(/\b\d+(?:[.,]\d+)?\s*(?:MVA|kVA|VA)\b/i);
 
   // Campos que só aceitamos se o valor original já vier no campo certo E tiver unidade coerente.
