@@ -1,4 +1,5 @@
 const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
+// PTM Móvel v10 - leitura conservadora por rótulo + validação anti-invenção
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -103,6 +104,12 @@ FAZ APENAS EXTRAÇÃO DE DADOS VISÍVEIS.
 Não inventes, não calcules e não completes por conhecimento geral.
 Se não houver certeza, usa "".
 Não repitas o mesmo valor em vários campos.
+Lê primeiro o RÓTULO impresso e só depois o valor que está na mesma linha/caixa.
+Não uses números de diagramas, bornes, tabelas de taps ou referências como identificação do transformador.
+Exemplos de bornes que NÃO são modelo/série: 1U, 1V, 1W, 2U, 2V, 2W, 1N.
+Se vires “Número”/“Serial no.”, usa SOMENTE o valor imediatamente associado a esse rótulo para numero_serie.
+Se vires “Frequência”/“Frequency”/“fr”, usa SOMENTE o valor associado e preserva Hz.
+Se vires “Potência nominal”/“Rated power”, preserva MVA/kVA/VA.
 
 REGRAS:
 - Hz = frequência
@@ -119,7 +126,7 @@ REGRAS:
 - arrefecimento deve parecer um código real (ex.: ONAN, ONAF, OFAF, ODAF)
 - se a chapa principal do transformador também tiver dados do regulador, o tipo continua a ser transformador
 
-PROCURA:
+PROCURA, respeitando a proximidade entre rótulo e valor:
 fabricante, tipo/modelo, número de série, ano, norma,
 potência nominal, número de fases, frequência,
 grupo de ligações e arrefecimento.
@@ -148,6 +155,11 @@ Não inventes. Se não estiver claramente associado ao rótulo/coluna, usa "".
 Respeita AT/BT ou HV/LV.
 Se uma unidade estiver no cabeçalho da linha/coluna, junta-a ao valor devolvido.
 Não repitas um valor em campos diferentes.
+Lê os cabeçalhos AT/BT (ou HV/LV) e mantém cada valor na coluna correta.
+Não confundas a tabela inferior do regulador/taps com os valores nominais principais do transformador.
+Para massas, procura explicitamente os rótulos Total, Óleo/Oil e Transporte/Transport.
+Para temperatura, distingue “aquecimento do óleo” de outros números.
+Para travessias/bushings, “Um” é tensão máxima, “Ir” é corrente nominal, “Test BIL/SIL/AC” contém BIL e AC, “P.F.” junto de C1/C2 é o fator de dissipação.
 
 PROCURA:
 - tensão AT e BT
@@ -237,7 +249,7 @@ function combinar(base, detalhe) {
       C2_pF:detalhe?.C2_pF || "",
       FD_C2:detalhe?.FD_C2 || ""
     },
-    outros_campos_visiveis:{}
+    outros_campos_visiveis:{ fase_travessia: ["A","B","C","N"].includes(String(tipoEscolhido||"").toUpperCase()) ? String(tipoEscolhido).toUpperCase() : "" }
   };
 }
 
@@ -250,7 +262,7 @@ function validarEOrganizar(x, tipoEscolhido) {
     ano:limpar(x?.ano),
     norma:limpar(x?.norma),
     dados:{},
-    outros_campos_visiveis:{}
+    outros_campos_visiveis:{ fase_travessia: ["A","B","C","N"].includes(String(tipoEscolhido||"").toUpperCase()) ? String(tipoEscolhido).toUpperCase() : "" }
   };
 
   const d = x?.dados || {};
@@ -276,6 +288,7 @@ function validarEOrganizar(x, tipoEscolhido) {
 
   out.dados.potencia_nominal = unidade(d.potencia_nominal, /\b(?:MVA|kVA|VA)\b/i);
   out.dados.frequencia = unidade(d.frequencia, /\bHz\b/i);
+  if (out.dados.frequencia && !/\b(?:50|60|50\s*\/\s*60)\s*Hz\b/i.test(out.dados.frequencia)) out.dados.frequencia = "";
 
   const nf = limpar(d.numero_fases);
   out.dados.numero_fases = /^(?:1|3)(?:\s*(?:fase|fases|phase|phases))?$/i.test(nf) ? nf : "";
