@@ -77,7 +77,6 @@ export default {
         const nome = item.name || "Fotografia";
         const fase = String(item.fase || "").toUpperCase();
         const image = item.image || "";
-        const imageEnhanced = item.image_enhanced || image;
 
         if (!["A","B","C","N"].includes(fase)) {
           resultados.push({nome,fase,erro:"Fase inválida. Escolhe A, B, C ou N."});
@@ -126,33 +125,19 @@ export default {
             if (!limpar(combinado[campo])) faltam.push(campo);
           }
 
-          // Mesma sequência, sem exceções, para A, B, C e N.
-          // Nunca volta a mexer num campo que já foi lido.
-          const ordemPTM = [
-            "fabricante",
-            "numero_serie",
-            "bil",
-            "tensao_fase_terra",
-            "tensao_max_sistema",
-            "corrente_nominal",
-            "fd_c1",
-            "c1_pf",
-            "fd_c2",
-            "c2_pf"
-          ];
+          // A/B/C ficam congeladas no comportamento da leitura principal.
+          // Só a N recebe recuperação adicional, e apenas nos 3 campos que faltam.
+          if (fase === "N") {
+            const camposN = ["corrente_nominal","c1_pf","c2_pf"];
+            for (const campo of camposN) {
+              if (limpar(combinado[campo])) continue;
 
-          for (const campo of ordemPTM) {
-            if (limpar(combinado[campo])) continue;
-
-            // Uma única recuperação focada para o campo em falta.
-            // É exatamente a mesma rotina independentemente da fase.
-            const imagemFallback = ["corrente_nominal","c1_pf","c2_pf"].includes(campo) ? imageEnhanced : image;
-            const extra = await lerCampoSequencial(env, imagemFallback, fase, campo);
-            const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
-
-            if (valor) {
-              combinado[campo] = valor;
-              combinado.evidencias[campo] = extra?.evidencia || "";
+              const extra = await lerCampoNFinal(env, image, campo);
+              const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
+              if (valor) {
+                combinado[campo] = valor;
+                combinado.evidencias[campo] = extra?.evidencia || "";
+              }
             }
           }
 
@@ -196,29 +181,15 @@ async function lerGrupo(env, image, prompt, schema) {
 
 
 
-async function lerCampoSequencial(env, image, fase, campo) {
-  const instrucoes = {
-    fabricante:
-      `Travessia ${fase}. Lê SOMENTE o fabricante visível na chapa. Não devolvas modelo, país, norma ou série.`,
-    numero_serie:
-      `Travessia ${fase}. Lê SOMENTE o número de série / Serial No. / S.N. visível na chapa. Não confundas com modelo, ano ou valores elétricos.`,
-    bil:
-      `Travessia ${fase}. Lê SOMENTE o Nível de isolamento LL, identificado por BIL/LI/Lightning Impulse ou equivalente. Devolve valor em kV/V.`,
-    tensao_fase_terra:
-      `Travessia ${fase}. Lê SOMENTE a Tensão Fase-Terra usada no PTM. Nas chapas de referência 72,5 kV ocupa este campo, mas o número tem de ser lido da fotografia atual.`,
-    tensao_max_sistema:
-      `Travessia ${fase}. Lê SOMENTE a Tensão máxima do sistema usada no PTM. Nas chapas de referência 155 kV ocupa este campo, mas o número tem de ser lido da fotografia atual.`,
+async function lerCampoNFinal(env, image, campo) {
+  const instrucao = {
     corrente_nominal:
-      `Travessia ${fase}. Lê SOMENTE a corrente nominal Ir/Rated current. O resultado tem de estar em A ou kA. Não uses Un, Um ou qualquer valor em kV.`,
-    fd_c1:
-      `Travessia ${fase}. Lê SOMENTE FD/P.F./tan delta associado a C1. Não devolvas a capacitância em pF.`,
+      `Lê apenas a CORRENTE NOMINAL desta chapa. Procura o rótulo Ir / Rated current / corrente nominal e o valor em A ou kA imediatamente associado. Não devolvas Un, Um, kV, BIL, FD, C1 ou C2.`,
     c1_pf:
-      `Travessia ${fase}. Lê SOMENTE a capacitância C1. O resultado tem de ser o número em pF associado a C1. Não devolvas FD/P.F.`,
-    fd_c2:
-      `Travessia ${fase}. Lê SOMENTE FD/P.F./tan delta associado a C2. Não devolvas a capacitância em pF.`,
+      `Lê apenas a CAPACITÂNCIA C1 desta chapa. Procura C1 e devolve exclusivamente o valor associado em pF. Ignora P.F., FD, %, tan delta e C2.`,
     c2_pf:
-      `Travessia ${fase}. Lê SOMENTE a capacitância C2. O resultado tem de ser o número em pF associado a C2. Não devolvas FD/P.F.`
-  };
+      `Lê apenas a CAPACITÂNCIA C2 desta chapa. Procura C2 e devolve exclusivamente o valor associado em pF. Ignora P.F., FD, %, tan delta e C1.`
+  }[campo];
 
   const schema = {
     type:"object",
@@ -234,24 +205,24 @@ async function lerCampoSequencial(env, image, fase, campo) {
     messages:[
       {
         role:"system",
-        content:"Extrai exatamente um campo de uma chapa técnica. Usa apenas o que está visível na fotografia. Não inventes, não calcules e não reutilizes valores de exemplos."
+        content:"És um leitor de chapas técnicas. Extrai um único campo da fotografia. Usa somente texto realmente visível. Não calcules nem completes por semelhança com outras chapas."
       },
       {
         role:"user",
         content:[
-          {type:"text",text:instrucoes[campo] + "\\nSe não estiver legível, devolve valor vazio. Em evidencia copia o rótulo/trecho que sustenta a leitura."},
+          {type:"text",text:instrucao + "\\nSe não conseguires ler com segurança, devolve valor vazio. Em evidencia inclui o rótulo e o valor/unidade vistos."},
           {type:"image_url",image_url:{url:image}}
         ]
       }
     ],
     guided_json:schema,
     temperature:0,
-    max_tokens:300,
+    max_tokens:250,
     stream:false
   });
 
   const obj = extrairObjeto(raw);
-  if (!obj || typeof obj !== "object") return null;
+  if(!obj || typeof obj!=="object") return null;
   return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
 }
 
