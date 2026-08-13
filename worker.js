@@ -125,29 +125,32 @@ export default {
             if (!limpar(combinado[campo])) faltam.push(campo);
           }
 
-          for (const campo of faltam) {
-            // Mantém as 3 tentativas que já funcionam bem em A/B/C.
-            const tentativas = ["normal","linha","visual"];
-            for (const modo of tentativas) {
-              const extra = await lerCampoUnico(env, image, fase, campo, modo);
-              const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
-              if (valor) {
-                combinado[campo] = valor;
-                combinado.evidencias[campo] = extra?.evidencia || "";
-                break;
-              }
-            }
+          // Mesma sequência, sem exceções, para A, B, C e N.
+          // Nunca volta a mexer num campo que já foi lido.
+          const ordemPTM = [
+            "fabricante",
+            "numero_serie",
+            "bil",
+            "tensao_fase_terra",
+            "tensao_max_sistema",
+            "corrente_nominal",
+            "fd_c1",
+            "c1_pf",
+            "fd_c2",
+            "c2_pf"
+          ];
 
-            // A chapa N de referência é a mais difícil. Se Ir/C1/C2 continuarem
-            // vazios, usa uma passagem adicional desenhada só para a zona da tabela.
-            if (fase === "N" && !limpar(combinado[campo]) &&
-                ["corrente_nominal","c1_pf","c2_pf"].includes(campo)) {
-              const extraN = await lerCampoN(env, image, campo);
-              const valorN = validarCampoFallback(campo, extraN?.valor, extraN?.evidencia);
-              if (valorN) {
-                combinado[campo] = valorN;
-                combinado.evidencias[campo] = extraN?.evidencia || "";
-              }
+          for (const campo of ordemPTM) {
+            if (limpar(combinado[campo])) continue;
+
+            // Uma única recuperação focada para o campo em falta.
+            // É exatamente a mesma rotina independentemente da fase.
+            const extra = await lerCampoSequencial(env, image, fase, campo);
+            const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
+
+            if (valor) {
+              combinado[campo] = valor;
+              combinado.evidencias[campo] = extra?.evidencia || "";
             }
           }
 
@@ -189,6 +192,66 @@ async function lerGrupo(env, image, prompt, schema) {
   return extrairObjeto(raw);
 }
 
+
+
+async function lerCampoSequencial(env, image, fase, campo) {
+  const instrucoes = {
+    fabricante:
+      `Travessia ${fase}. Lê SOMENTE o fabricante visível na chapa. Não devolvas modelo, país, norma ou série.`,
+    numero_serie:
+      `Travessia ${fase}. Lê SOMENTE o número de série / Serial No. / S.N. visível na chapa. Não confundas com modelo, ano ou valores elétricos.`,
+    bil:
+      `Travessia ${fase}. Lê SOMENTE o Nível de isolamento LL, identificado por BIL/LI/Lightning Impulse ou equivalente. Devolve valor em kV/V.`,
+    tensao_fase_terra:
+      `Travessia ${fase}. Lê SOMENTE a Tensão Fase-Terra usada no PTM. Nas chapas de referência 72,5 kV ocupa este campo, mas o número tem de ser lido da fotografia atual.`,
+    tensao_max_sistema:
+      `Travessia ${fase}. Lê SOMENTE a Tensão máxima do sistema usada no PTM. Nas chapas de referência 155 kV ocupa este campo, mas o número tem de ser lido da fotografia atual.`,
+    corrente_nominal:
+      `Travessia ${fase}. Lê SOMENTE a corrente nominal Ir/Rated current. O resultado tem de estar em A ou kA. Não uses Un, Um ou qualquer valor em kV.`,
+    fd_c1:
+      `Travessia ${fase}. Lê SOMENTE FD/P.F./tan delta associado a C1. Não devolvas a capacitância em pF.`,
+    c1_pf:
+      `Travessia ${fase}. Lê SOMENTE a capacitância C1. O resultado tem de ser o número em pF associado a C1. Não devolvas FD/P.F.`,
+    fd_c2:
+      `Travessia ${fase}. Lê SOMENTE FD/P.F./tan delta associado a C2. Não devolvas a capacitância em pF.`,
+    c2_pf:
+      `Travessia ${fase}. Lê SOMENTE a capacitância C2. O resultado tem de ser o número em pF associado a C2. Não devolvas FD/P.F.`
+  };
+
+  const schema = {
+    type:"object",
+    additionalProperties:false,
+    properties:{
+      valor:{type:"string"},
+      evidencia:{type:"string"}
+    },
+    required:["valor","evidencia"]
+  };
+
+  const raw = await env.AI.run(MODEL,{
+    messages:[
+      {
+        role:"system",
+        content:"Extrai exatamente um campo de uma chapa técnica. Usa apenas o que está visível na fotografia. Não inventes, não calcules e não reutilizes valores de exemplos."
+      },
+      {
+        role:"user",
+        content:[
+          {type:"text",text:instrucoes[campo] + "\\nSe não estiver legível, devolve valor vazio. Em evidencia copia o rótulo/trecho que sustenta a leitura."},
+          {type:"image_url",image_url:{url:image}}
+        ]
+      }
+    ],
+    guided_json:schema,
+    temperature:0,
+    max_tokens:300,
+    stream:false
+  });
+
+  const obj = extrairObjeto(raw);
+  if (!obj || typeof obj !== "object") return null;
+  return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
+}
 
 async function lerCampoUnico(env, image, fase, campo, modo='normal') {
   const mapa = {
@@ -236,55 +299,6 @@ async function lerCampoUnico(env, image, fase, campo, modo='normal') {
 
   const obj = extrairObjeto(raw);
   if (!obj || typeof obj !== "object") return null;
-  return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
-}
-
-
-async function lerCampoN(env, image, campo) {
-  const instrucao = {
-    corrente_nominal:
-      `Inspeciona minuciosamente esta chapa da travessia N. Procura SOMENTE a linha/célula de corrente nominal, marcada por "Ir", "Rated current" ou equivalente. Lê o número em A ou kA associado a esse rótulo. Não uses Un/Um, valores em kV, BIL, C1 ou C2.`,
-    c1_pf:
-      `Inspeciona minuciosamente a zona de dados capacitivos desta chapa da travessia N. Procura SOMENTE "C1" e a CAPACITÂNCIA associada em pF. Ignora o valor P.F./FD em percentagem ou decimal. Segue a mesma linha/coluna de C1 até ao número em pF.`,
-    c2_pf:
-      `Inspeciona minuciosamente a zona de dados capacitivos desta chapa da travessia N. Procura SOMENTE "C2" e a CAPACITÂNCIA associada em pF. Ignora o valor P.F./FD em percentagem ou decimal. Segue a mesma linha/coluna de C2 até ao número em pF.`
-  }[campo];
-
-  const schema = {
-    type:"object",
-    additionalProperties:false,
-    properties:{
-      valor:{type:"string"},
-      evidencia:{type:"string"},
-      confianca:{type:"string"}
-    },
-    required:["valor","evidencia","confianca"]
-  };
-
-  const raw = await env.AI.run(MODEL,{
-    messages:[
-      {
-        role:"system",
-        content:"És um leitor visual de chapas técnicas. Nesta tarefa há apenas UM campo a extrair. Examina caracteres pequenos e a relação espacial entre rótulo, unidade e valor. Nunca uses os valores dos exemplos do prompt como resposta; só a fotografia conta."
-      },
-      {
-        role:"user",
-        content:[
-          {type:"text",text:instrucao + `\\nSe não estiver realmente legível, devolve valor vazio. Em evidencia inclui o rótulo e o valor que viste. Em confianca devolve alta, media ou baixa.`},
-          {type:"image_url",image_url:{url:image}}
-        ]
-      }
-    ],
-    guided_json:schema,
-    temperature:0,
-    max_tokens:350,
-    stream:false
-  });
-
-  const obj=extrairObjeto(raw);
-  if(!obj || typeof obj!=="object") return null;
-  // Não aceitamos uma adivinhação declaradamente de baixa confiança.
-  if(/^baixa$/i.test(limpar(obj.confianca))) return null;
   return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
 }
 
