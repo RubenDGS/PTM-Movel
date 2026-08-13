@@ -1,451 +1,72 @@
-const MODEL = "@cf/moondream/moondream3.1-9B-A2B";
-// PTM Móvel v10 - leitura conservadora por rótulo + validação anti-invenção
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
-};
-
-export default {
-  async fetch(request, env) {
-    if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
-
-    const url = new URL(request.url);
-    if (request.method !== "POST" || (url.pathname !== "/" && url.pathname !== "/analisar")) {
-      return resposta({ ok:false, erro:"Método ou endereço não permitido." }, 405);
-    }
-
-    if (!env.AI) {
-      return resposta({ ok:false, erro:'Binding "AI" não encontrado.' }, 500);
-    }
-
-    try {
-      const body = await request.json();
-      const images = Array.isArray(body.images) ? body.images : [];
-
-      if (!images.length) {
-        return resposta({ ok:false, erro:"Não foram recebidas fotografias." }, 400);
-      }
-
-      const resultados = [];
-
-      for (const item of images) {
-        const nome = item.name || item.nome || "Fotografia";
-        const tipoEscolhido = String(item.tipo || "AUTO").toUpperCase();
-        const image = item.image || item.imagem || "";
-
-        if (!image) {
-          resultados.push({ nome, tipo:tipoEscolhido, erro:"Imagem não recebida." });
-          continue;
-        }
-
-        try {
-          // PASSAGEM 1: dados principais do equipamento.
-          const baseRaw = await env.AI.run(MODEL, {
-            task:"query",
-            image,
-            question:promptBase(tipoEscolhido),
-            reasoning:false,
-            temperature:0,
-            max_tokens:4500,
-            stream:false
-          });
-
-          const baseText = extrairTexto(baseRaw);
-          const baseJson = parseJSONSeguro(baseText) || {};
-
-          // PASSAGEM 2: apenas dados que costumam estar em tabelas/zonas densas:
-          // AT/BT, curto-circuito, massas, temperaturas e regulador/travessia.
-          const detalheRaw = await env.AI.run(MODEL, {
-            task:"query",
-            image,
-            question:promptDetalhe(tipoEscolhido),
-            reasoning:false,
-            temperature:0,
-            max_tokens:5000,
-            stream:false
-          });
-
-          const detalheText = extrairTexto(detalheRaw);
-          const detalheJson = parseJSONSeguro(detalheText) || {};
-
-          const combinado = combinar(baseJson, detalheJson, tipoEscolhido);
-          const resultado = validarEOrganizar(combinado, tipoEscolhido);
-
-          resultados.push({
-            nome,
-            tipo:tipoEscolhido,
-            resultado
-          });
-
-        } catch (e) {
-          resultados.push({
-            nome,
-            tipo:tipoEscolhido,
-            erro:e?.message || String(e)
-          });
-        }
-      }
-
-      return resposta({ ok:true, resultados });
-
-    } catch (e) {
-      return resposta({ ok:false, erro:e?.message || String(e) }, 500);
-    }
+const MODEL="@cf/moondream/moondream3.1-9B-A2B";
+const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"POST, OPTIONS","Access-Control-Allow-Headers":"Content-Type"};
+export default{async fetch(request,env){
+ if(request.method==="OPTIONS")return new Response(null,{headers:CORS});
+ const url=new URL(request.url);
+ if(request.method!=="POST"||(url.pathname!=="/"&&url.pathname!=="/analisar"))return resposta({ok:false,erro:"Método ou endereço não permitido."},405);
+ if(!env.AI)return resposta({ok:false,erro:'Binding "AI" não encontrado.'},500);
+ try{
+  const body=await request.json();const images=Array.isArray(body.images)?body.images:[];
+  if(!images.length)return resposta({ok:false,erro:"Não foram recebidas fotografias."},400);
+  const resultados=[];
+  for(const item of images){
+   const nome=item.name||"Fotografia";const fase=String(item.fase||"").toUpperCase();const image=item.image||"";
+   if(!["A","B","C","N"].includes(fase)){resultados.push({nome,fase,erro:"Fase inválida."});continue}
+   if(!image){resultados.push({nome,fase,erro:"Imagem não recebida."});continue}
+   try{
+    const raw=await env.AI.run(MODEL,{task:"query",image,question:criarPergunta(fase),reasoning:false,temperature:0,max_tokens:3500,stream:false});
+    const texto=extrairTexto(raw);const obj=parseJSONSeguro(texto);
+    if(!obj){resultados.push({nome,fase,erro:"A leitura não veio num formato utilizável."});continue}
+    resultados.push({nome,fase,resultado:validar(obj)});
+   }catch(e){resultados.push({nome,fase,erro:e?.message||String(e)})}
   }
-};
-
-function promptBase(tipo) {
-  return `Analisa esta chapa técnica para ajudar a preencher o Ativo no PTM.
-Contexto indicado pelo utilizador: ${tipo}
-
-FAZ APENAS EXTRAÇÃO DE DADOS VISÍVEIS.
-Não inventes, não calcules e não completes por conhecimento geral.
-Se não houver certeza, usa "".
-Não repitas o mesmo valor em vários campos.
-Lê primeiro o RÓTULO impresso e só depois o valor que está na mesma linha/caixa.
-Não uses números de diagramas, bornes, tabelas de taps ou referências como identificação do transformador.
-Exemplos de bornes que NÃO são modelo/série: 1U, 1V, 1W, 2U, 2V, 2W, 1N.
-Se vires “Número”/“Serial no.”, usa SOMENTE o valor imediatamente associado a esse rótulo para numero_serie.
-Se vires “Frequência”/“Frequency”/“fr”, usa SOMENTE o valor associado e preserva Hz.
-Se vires “Potência nominal”/“Rated power”, preserva MVA/kVA/VA.
+  return resposta({ok:true,resultados});
+ }catch(e){return resposta({ok:false,erro:e?.message||String(e)},500)}
+}};
+function criarPergunta(fase){return `Analisa APENAS esta chapa de uma TRAVESSIA / BUSHING elétrica. A fotografia corresponde à travessia ${fase}.
+Extrai SOMENTE os valores necessários para UMA linha da secção Travessias do PTM:
+1 bil = Nível de isolam. LL (BIL)
+2 tensao_fase_terra = Tensão Fase-Terra
+3 tensao_max_sistema = Tensão máx. do sistema
+4 corrente_nominal = Corrente nominal
+5 fd_c1 = FD (C1)
+6 c1_pf = Cap. (C1)
+7 fd_c2 = FD (C2)
+8 c2_pf = Cap. (C2)
+9 tipo_isolamento = Tipo de isolamento
 
 REGRAS:
-- Hz = frequência
-- VA/kVA/MVA = potência
-- V/kV = tensão
-- A/kA = corrente
-- kg/t = massa
-- °C/C = temperatura
-- % = percentagem apenas quando o rótulo o justificar
-- AT e BT isolados não são fabricante, modelo, grupo nem arrefecimento
-- fabricante deve ser uma marca/nome real
-- ano deve ter 4 dígitos
-- grupo de ligações deve parecer um código real (ex.: Dyn11, YNyn0, Yd11)
-- arrefecimento deve parecer um código real (ex.: ONAN, ONAF, OFAF, ODAF)
-- se a chapa principal do transformador também tiver dados do regulador, o tipo continua a ser transformador
-
-PROCURA, respeitando a proximidade entre rótulo e valor:
-fabricante, tipo/modelo, número de série, ano, norma,
-potência nominal, número de fases, frequência,
-grupo de ligações e arrefecimento.
-
+- Usa APENAS informação realmente visível.
+- NÃO inventes, NÃO calcules, NÃO deduzas.
+- Se um campo não estiver indicado ou legível, devolve "".
+- NÃO uses o mesmo valor em dois campos só para preencher.
+- BIL / LI / Lightning Impulse -> bil.
+- Um / Highest voltage for equipment / Maximum system voltage -> tensao_max_sistema.
+- Ir / Rated current / Current rating -> corrente_nominal.
+- C1 em pF -> c1_pf. C2 em pF -> c2_pf.
+- FD C1 / PF C1 / Power factor C1 / tan delta C1 -> fd_c1.
+- FD C2 / PF C2 / Power factor C2 / tan delta C2 -> fd_c2.
+- tensao_fase_terra só se estiver explicitamente identificada como phase-to-ground / phase-earth / fase-terra / equivalente inequívoco.
+- tipo_isolamento só se estiver explicitamente indicado (OIP, RIP, RBP ou descrição equivalente).
+- Chapas antigas podem ter poucos dados; deixa o resto vazio.
+- Não devolvas fabricante, modelo, série ou ano.
+Para cada campo preenchido, em evidencias escreve o rótulo/texto que viste.
 Responde SOMENTE com JSON válido:
-{
- "tipo_chapa":"",
- "fabricante":"",
- "modelo_tipo":"",
- "numero_serie":"",
- "ano":"",
- "norma":"",
- "potencia_nominal":"",
- "numero_fases":"",
- "frequencia":"",
- "grupo_ligacoes":"",
- "arrefecimento":""
-}`;
+{"bil":"","tensao_fase_terra":"","tensao_max_sistema":"","corrente_nominal":"","fd_c1":"","c1_pf":"","fd_c2":"","c2_pf":"","tipo_isolamento":"","evidencias":{"bil":"","tensao_fase_terra":"","tensao_max_sistema":"","corrente_nominal":"","fd_c1":"","c1_pf":"","fd_c2":"","c2_pf":"","tipo_isolamento":""}}`}
+function validar(x){
+ const out={bil:"",tensao_fase_terra:"",tensao_max_sistema:"",corrente_nominal:"",fd_c1:"",c1_pf:"",fd_c2:"",c2_pf:"",tipo_isolamento:"",evidencias:{}};
+ out.bil=aceita(x?.bil,/\b(?:kV|V)\b/i);out.tensao_fase_terra=aceita(x?.tensao_fase_terra,/\b(?:kV|V)\b/i);out.tensao_max_sistema=aceita(x?.tensao_max_sistema,/\b(?:kV|V)\b/i);
+ out.corrente_nominal=aceita(x?.corrente_nominal,/\b(?:kA|A)\b/i);out.c1_pf=aceita(x?.c1_pf,/\bpF\b/i);out.c2_pf=aceita(x?.c2_pf,/\bpF\b/i);
+ out.fd_c1=validarFD(x?.fd_c1);out.fd_c2=validarFD(x?.fd_c2);
+ const ti=limpar(x?.tipo_isolamento);out.tipo_isolamento=ti.length<=60?ti:"";
+ if(out.tensao_fase_terra&&out.tensao_max_sistema&&normal(out.tensao_fase_terra)===normal(out.tensao_max_sistema))out.tensao_fase_terra="";
+ const ev=x?.evidencias&&typeof x.evidencias==="object"?x.evidencias:{};for(const k of Object.keys(out)){if(k==="evidencias")continue;out.evidencias[k]=out[k]?limpar(ev[k]):""}
+ return out;
 }
-
-function promptDetalhe(tipo) {
-  return `Analisa a MESMA chapa técnica com foco apenas nos campos abaixo.
-Contexto indicado pelo utilizador: ${tipo}
-
-Não inventes. Se não estiver claramente associado ao rótulo/coluna, usa "".
-Respeita AT/BT ou HV/LV.
-Se uma unidade estiver no cabeçalho da linha/coluna, junta-a ao valor devolvido.
-Não repitas um valor em campos diferentes.
-Lê os cabeçalhos AT/BT (ou HV/LV) e mantém cada valor na coluna correta.
-Não confundas a tabela inferior do regulador/taps com os valores nominais principais do transformador.
-Para massas, procura explicitamente os rótulos Total, Óleo/Oil e Transporte/Transport.
-Para temperatura, distingue “aquecimento do óleo” de outros números.
-Para travessias/bushings, “Um” é tensão máxima, “Ir” é corrente nominal, “Test BIL/SIL/AC” contém BIL e AC, “P.F.” junto de C1/C2 é o fator de dissipação.
-
-PROCURA:
-- tensão AT e BT
-- corrente AT e BT
-- níveis de isolamento AT e BT
-- Ucc/Uk/Zk/impedância de curto-circuito
-- massa total, massa do óleo e massa de transporte
-- temperatura do óleo e temperatura do enrolamento
-- regulador/comutador: número de posições e tabela/valores das posições
-- travessia: tensão nominal, tensão máxima/Um, corrente nominal, BIL, C1, C2, FD C1, FD C2
-
-REGRAS DE VALIDAÇÃO:
-- tensão: V ou kV
-- corrente: A ou kA
-- massas: kg ou t
-- temperatura: °C ou C
-- Ucc/Uk/Zk: normalmente %
-- C1/C2: pF
-- BIL: V/kV
-- só preencher travessia se a foto for realmente de uma travessia ou se o utilizador indicou A/B/C/N
-- só preencher número/posições do regulador se houver regulador/comutador ou tabela de posições claramente visível
-
-Responde SOMENTE com JSON válido:
-{
- "tensao_AT":"",
- "tensao_BT":"",
- "corrente_AT":"",
- "corrente_BT":"",
- "nivel_isolamento_AT":"",
- "nivel_isolamento_BT":"",
- "tensao_curto_circuito_Ucc":"",
- "impedancia_curto_circuito":"",
- "massa_total":"",
- "massa_oleo":"",
- "massa_transporte":"",
- "temperatura_oleo":"",
- "temperatura_enrolamento":"",
- "numero_posicoes_regulador":"",
- "posicoes_regulador":"",
- "tensao_nominal_travessia":"",
- "tensao_maxima_travessia":"",
- "corrente_nominal_travessia":"",
- "BIL":"",
- "C1_pF":"",
- "FD_C1":"",
- "C2_pF":"",
- "FD_C2":""
-}`;
-}
-
-function combinar(base, detalhe, tipoEscolhido) {
-  return {
-    tipo_chapa:base?.tipo_chapa || "",
-    fabricante:base?.fabricante || "",
-    modelo_tipo:base?.modelo_tipo || "",
-    numero_serie:base?.numero_serie || "",
-    ano:base?.ano || "",
-    norma:base?.norma || "",
-    dados:{
-      potencia_nominal:base?.potencia_nominal || "",
-      numero_fases:base?.numero_fases || "",
-      frequencia:base?.frequencia || "",
-      grupo_ligacoes:base?.grupo_ligacoes || "",
-      arrefecimento:base?.arrefecimento || "",
-
-      tensao_AT:detalhe?.tensao_AT || "",
-      tensao_BT:detalhe?.tensao_BT || "",
-      corrente_AT:detalhe?.corrente_AT || "",
-      corrente_BT:detalhe?.corrente_BT || "",
-      nivel_isolamento_AT:detalhe?.nivel_isolamento_AT || "",
-      nivel_isolamento_BT:detalhe?.nivel_isolamento_BT || "",
-      tensao_curto_circuito_Ucc:detalhe?.tensao_curto_circuito_Ucc || "",
-      impedancia_curto_circuito:detalhe?.impedancia_curto_circuito || "",
-      massa_total:detalhe?.massa_total || "",
-      massa_oleo:detalhe?.massa_oleo || "",
-      massa_transporte:detalhe?.massa_transporte || "",
-      temperatura_oleo:detalhe?.temperatura_oleo || "",
-      temperatura_enrolamento:detalhe?.temperatura_enrolamento || "",
-      numero_posicoes_regulador:detalhe?.numero_posicoes_regulador || "",
-      posicoes_regulador:detalhe?.posicoes_regulador || "",
-      tensao_nominal_travessia:detalhe?.tensao_nominal_travessia || "",
-      tensao_maxima_travessia:detalhe?.tensao_maxima_travessia || "",
-      corrente_nominal_travessia:detalhe?.corrente_nominal_travessia || "",
-      BIL:detalhe?.BIL || "",
-      C1_pF:detalhe?.C1_pF || "",
-      FD_C1:detalhe?.FD_C1 || "",
-      C2_pF:detalhe?.C2_pF || "",
-      FD_C2:detalhe?.FD_C2 || ""
-    },
-    outros_campos_visiveis:{ fase_travessia: ["A","B","C","N"].includes(String(tipoEscolhido||"").toUpperCase()) ? String(tipoEscolhido).toUpperCase() : "" }
-  };
-}
-
-function validarEOrganizar(x, tipoEscolhido) {
-  const out = {
-    tipo_chapa:normalizarTipo(x?.tipo_chapa, tipoEscolhido, x),
-    fabricante:limpar(x?.fabricante),
-    modelo_tipo:limpar(x?.modelo_tipo),
-    numero_serie:limpar(x?.numero_serie),
-    ano:limpar(x?.ano),
-    norma:limpar(x?.norma),
-    dados:{},
-    outros_campos_visiveis:{ fase_travessia: ["A","B","C","N"].includes(String(tipoEscolhido||"").toUpperCase()) ? String(tipoEscolhido).toUpperCase() : "" }
-  };
-
-  const d = x?.dados || {};
-
-  // Identificação
-  if (!/^(19|20)\d{2}$/.test(out.ano)) out.ano = "";
-  if (/^(AT|BT|HV|LV|EU|2U|1U|1V|1W)$/i.test(out.fabricante)) out.fabricante = "";
-  if (/^(AT|BT|HV|LV|EU|2U|1U|1V|1W)$/i.test(out.modelo_tipo)) out.modelo_tipo = "";
-
-  // Série: rejeita valores demasiado curtos e valores com unidades.
-  if (out.numero_serie) {
-    if (out.numero_serie.length < 3 ||
-        /\b(?:Hz|MVA|kVA|VA|kV|V|kA|A|kg|pF|°C)\b/i.test(out.numero_serie)) {
-      out.numero_serie = "";
-    }
-  }
-
-  // Norma: CEI/IEC/EN + números, ou texto que contenha standard/norma.
-  if (out.norma && !/\b(?:CEI|IEC|EN)\b.*\d/i.test(out.norma) &&
-      !/\b(?:norma|standard)\b/i.test(out.norma)) {
-    out.norma = "";
-  }
-
-  out.dados.potencia_nominal = unidade(d.potencia_nominal, /\b(?:MVA|kVA|VA)\b/i);
-  out.dados.frequencia = unidade(d.frequencia, /\bHz\b/i);
-  if (out.dados.frequencia && !/\b(?:50|60|50\s*\/\s*60)\s*Hz\b/i.test(out.dados.frequencia)) out.dados.frequencia = "";
-
-  const nf = limpar(d.numero_fases);
-  out.dados.numero_fases = /^(?:1|3)(?:\s*(?:fase|fases|phase|phases))?$/i.test(nf) ? nf : "";
-
-  const grupo = limpar(d.grupo_ligacoes);
-  out.dados.grupo_ligacoes =
-    grupo && !/^(AT|BT|HV|LV)$/i.test(grupo) &&
-    /(?=.*[A-Za-z])(?=.*\d)/.test(grupo) ? grupo : "";
-
-  const cool = limpar(d.arrefecimento);
-  out.dados.arrefecimento =
-    /^(?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF)(?:[\/+\- ](?:ONAN|ONAF|OFAF|ODAF|OFWF|ODWF|KNAN|KNAF))*$/i.test(cool)
-      ? cool : "";
-
-  out.dados.tensao_AT = unidade(d.tensao_AT, /\b(?:kV|V)\b/i);
-  out.dados.tensao_BT = unidade(d.tensao_BT, /\b(?:kV|V)\b/i);
-  out.dados.corrente_AT = unidade(d.corrente_AT, /\b(?:kA|A)\b/i);
-  out.dados.corrente_BT = unidade(d.corrente_BT, /\b(?:kA|A)\b/i);
-
-  out.dados.nivel_isolamento_AT = unidade(d.nivel_isolamento_AT, /\b(?:kV|V)\b/i);
-  out.dados.nivel_isolamento_BT = unidade(d.nivel_isolamento_BT, /\b(?:kV|V)\b/i);
-
-  out.dados.tensao_curto_circuito_Ucc = unidade(d.tensao_curto_circuito_Ucc, /%/);
-  out.dados.impedancia_curto_circuito = unidade(d.impedancia_curto_circuito, /(?:%|Ω|ohm)/i);
-
-  out.dados.massa_total = unidade(d.massa_total, /\b(?:kg|t)\b/i);
-  out.dados.massa_oleo = unidade(d.massa_oleo, /\b(?:kg|t)\b/i);
-  out.dados.massa_transporte = unidade(d.massa_transporte, /\b(?:kg|t)\b/i);
-
-  out.dados.temperatura_oleo = unidade(d.temperatura_oleo, /°?\s*C\b/i);
-  out.dados.temperatura_enrolamento = unidade(d.temperatura_enrolamento, /°?\s*C\b/i);
-
-  // Apaga duplicações impossíveis.
-  apagarDuplicados(out.dados, [
-    ["tensao_AT","tensao_BT","corrente_AT","corrente_BT"],
-    ["massa_total","massa_oleo","massa_transporte"],
-    ["nivel_isolamento_AT","nivel_isolamento_BT"]
-  ]);
-
-  const t = String(tipoEscolhido || "").toUpperCase();
-
-  // Regulador pode estar na própria chapa do transformador.
-  const nr = limpar(d.numero_posicoes_regulador);
-  out.dados.numero_posicoes_regulador =
-    /^\d{1,2}$/.test(nr) && Number(nr) >= 2 && Number(nr) <= 50 ? nr : "";
-
-  const pos = limpar(d.posicoes_regulador);
-  out.dados.posicoes_regulador =
-    pos && pos !== "1" && pos.length >= 3 ? pos : "";
-
-  // Travessia apenas quando é travessia.
-  const isTrav = ["A","B","C","N"].includes(t) || out.tipo_chapa === "travessia";
-  out.dados.tensao_nominal_travessia =
-    isTrav ? unidade(d.tensao_nominal_travessia, /\b(?:kV|V)\b/i) : "";
-  out.dados.tensao_maxima_travessia =
-    isTrav ? unidade(d.tensao_maxima_travessia, /\b(?:kV|V)\b/i) : "";
-  out.dados.corrente_nominal_travessia =
-    isTrav ? unidade(d.corrente_nominal_travessia, /\b(?:kA|A)\b/i) : "";
-  out.dados.BIL =
-    isTrav ? unidade(d.BIL, /\b(?:kV|V)\b/i) : "";
-  out.dados.C1_pF =
-    isTrav ? unidade(d.C1_pF, /\bpF\b/i) : "";
-  out.dados.C2_pF =
-    isTrav ? unidade(d.C2_pF, /\bpF\b/i) : "";
-
-  const fd1 = limpar(d.FD_C1);
-  out.dados.FD_C1 = isTrav && (/%/.test(fd1) || /^0?[.,]\d+$/.test(fd1)) ? fd1 : "";
-  const fd2 = limpar(d.FD_C2);
-  out.dados.FD_C2 = isTrav && (/%/.test(fd2) || /^0?[.,]\d+$/.test(fd2)) ? fd2 : "";
-
-  return out;
-}
-
-function normalizarTipo(v, tipoEscolhido, x) {
-  const t = String(tipoEscolhido || "").toUpperCase();
-
-  if (["A","B","C","N"].includes(t)) return "travessia";
-  if (t === "TRANSFORMADOR") return "transformador";
-  if (t === "REGULADOR") return "regulador";
-
-  // AUTO: presença de MVA ou AT/BT favorece transformador,
-  // mesmo que a chapa também tenha dados do regulador.
-  const d = x?.dados || {};
-  if (/\b(?:MVA|kVA|VA)\b/i.test(limpar(d.potencia_nominal)) ||
-      limpar(d.tensao_AT) || limpar(d.tensao_BT) ||
-      limpar(d.grupo_ligacoes)) {
-    return "transformador";
-  }
-
-  const s = limpar(v).toLowerCase();
-  if (/transform/.test(s)) return "transformador";
-  if (/travessia|bushing/.test(s)) return "travessia";
-  if (/regulador|oltc|tap/.test(s)) return "regulador";
-  return "";
-}
-
-function limpar(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") return String(v);
-  if (typeof v !== "string") return "";
-  return v.trim();
-}
-
-function unidade(v, re) {
-  const s = limpar(v);
-  return s && re.test(s) ? s : "";
-}
-
-function apagarDuplicados(obj, grupos) {
-  for (const grupo of grupos) {
-    const mapa = {};
-    for (const k of grupo) {
-      const v = limpar(obj[k]).toLowerCase().replace(/\s+/g," ");
-      if (!v) continue;
-      (mapa[v] ||= []).push(k);
-    }
-    for (const ks of Object.values(mapa)) {
-      if (ks.length > 1) ks.forEach(k => obj[k] = "");
-    }
-  }
-}
-
-function extrairTexto(x) {
-  if (typeof x === "string") return x;
-  if (typeof x?.answer === "string") return x.answer;
-  if (typeof x?.result?.answer === "string") return x.result.answer;
-  if (typeof x?.response === "string") return x.response;
-  if (typeof x?.result === "string") return x.result;
-  return "";
-}
-
-function parseJSONSeguro(texto) {
-  if (!texto) return null;
-
-  let s = String(texto).trim()
-    .replace(/^```(?:json)?\s*/i,"")
-    .replace(/\s*```$/i,"")
-    .trim();
-
-  try { return JSON.parse(s); } catch {}
-
-  const a = s.indexOf("{");
-  const b = s.lastIndexOf("}");
-  if (a >= 0 && b > a) {
-    try { return JSON.parse(s.slice(a,b+1)); } catch {}
-  }
-
-  return null;
-}
-
-function resposta(dados, status=200) {
-  return new Response(JSON.stringify(dados, null, 2), {
-    status,
-    headers:{
-      ...CORS,
-      "Content-Type":"application/json; charset=UTF-8",
-      "Cache-Control":"no-store"
-    }
-  });
-}
+function limpar(v){if(v===null||v===undefined)return "";if(typeof v==="number")return String(v);if(typeof v!=="string")return "";return v.trim()}
+function normal(v){return limpar(v).toLowerCase().replace(/\s+/g," ")}
+function aceita(v,re){const s=limpar(v);return s&&re.test(s)?s:""}
+function validarFD(v){const s=limpar(v);if(!s)return "";if(/%/.test(s))return s;if(/^0?[.,]\d+$/.test(s))return s;return ""}
+function extrairTexto(x){if(typeof x==="string")return x;if(typeof x?.answer==="string")return x.answer;if(typeof x?.result?.answer==="string")return x.result.answer;if(typeof x?.response==="string")return x.response;if(typeof x?.result==="string")return x.result;return ""}
+function parseJSONSeguro(texto){let s=String(texto||"").trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"");try{return JSON.parse(s)}catch{}const a=s.indexOf("{"),b=s.lastIndexOf("}");if(a>=0&&b>a){try{return JSON.parse(s.slice(a,b+1))}catch{}}return null}
+function resposta(dados,status=200){return new Response(JSON.stringify(dados,null,2),{status,headers:{...CORS,"Content-Type":"application/json; charset=UTF-8","Cache-Control":"no-store"}})}
