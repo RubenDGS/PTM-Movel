@@ -10,25 +10,27 @@ const SCHEMA_ELETRICO = {
   type:"object",
   additionalProperties:false,
   properties:{
+    fabricante:{type:"string"},
+    numero_serie:{type:"string"},
     bil:{type:"string"},
     tensao_fase_terra:{type:"string"},
     tensao_max_sistema:{type:"string"},
     corrente_nominal:{type:"string"},
-    tipo_isolamento:{type:"string"},
     evidencias:{
       type:"object",
       additionalProperties:false,
       properties:{
+        fabricante:{type:"string"},
+        numero_serie:{type:"string"},
         bil:{type:"string"},
         tensao_fase_terra:{type:"string"},
         tensao_max_sistema:{type:"string"},
-        corrente_nominal:{type:"string"},
-        tipo_isolamento:{type:"string"}
+        corrente_nominal:{type:"string"}
       },
-      required:["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","tipo_isolamento"]
+      required:["fabricante","numero_serie","bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal"]
     }
   },
-  required:["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","tipo_isolamento","evidencias"]
+  required:["fabricante","numero_serie","bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","evidencias"]
 };
 
 const SCHEMA_CAP = {
@@ -92,21 +94,23 @@ export default {
           ]);
 
           const combinado = {
+            fabricante: eletrico?.fabricante || "",
+            numero_serie: eletrico?.numero_serie || "",
             bil: eletrico?.bil || "",
             tensao_fase_terra: eletrico?.tensao_fase_terra || "",
             tensao_max_sistema: eletrico?.tensao_max_sistema || "",
             corrente_nominal: eletrico?.corrente_nominal || "",
-            tipo_isolamento: eletrico?.tipo_isolamento || "",
             fd_c1: capacitivo?.fd_c1 || "",
             c1_pf: capacitivo?.c1_pf || "",
             fd_c2: capacitivo?.fd_c2 || "",
             c2_pf: capacitivo?.c2_pf || "",
             evidencias: {
+              fabricante: eletrico?.evidencias?.fabricante || "",
+              numero_serie: eletrico?.evidencias?.numero_serie || "",
               bil: eletrico?.evidencias?.bil || "",
               tensao_fase_terra: eletrico?.evidencias?.tensao_fase_terra || "",
               tensao_max_sistema: eletrico?.evidencias?.tensao_max_sistema || "",
               corrente_nominal: eletrico?.evidencias?.corrente_nominal || "",
-              tipo_isolamento: eletrico?.evidencias?.tipo_isolamento || "",
               fd_c1: capacitivo?.evidencias?.fd_c1 || "",
               c1_pf: capacitivo?.evidencias?.c1_pf || "",
               fd_c2: capacitivo?.evidencias?.fd_c2 || "",
@@ -117,7 +121,7 @@ export default {
           // FALLBACK: se algum campo importante ficou vazio, faz uma leitura
           // muito focada apenas nesse campo, sem voltar a interpretar a chapa toda.
           const faltam = [];
-          for (const campo of ["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","c1_pf","c2_pf"]) {
+          for (const campo of ["fabricante","numero_serie","bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","c1_pf","c2_pf"]) {
             if (!limpar(combinado[campo])) faltam.push(campo);
           }
 
@@ -170,6 +174,8 @@ async function lerGrupo(env, image, prompt, schema) {
 
 async function lerCampoUnico(env, image, fase, campo) {
   const mapa = {
+    fabricante: `Procura APENAS o nome do FABRICANTE da travessia ${fase}. Não devolvas modelo, país, norma ou número de série. Devolve exatamente o fabricante visível e uma evidência curta. Se não estiver legível, devolve vazio.`,
+    numero_serie: `Procura APENAS o NÚMERO DE SÉRIE / Serial No. / S.N. da travessia ${fase}. Não confundas com modelo, tipo, ano ou valores elétricos. Devolve exatamente o número/código visível e uma evidência curta. Se não estiver legível, devolve vazio.`,
     bil: `Procura APENAS o BIL/LI/Lightning Impulse da travessia ${fase}. Devolve o valor com unidade kV/V e uma evidência curta. Se não estiver visível, devolve vazio.`,
     tensao_fase_terra: `Procura APENAS a tensão fase-terra/phase-to-ground/phase-earth da travessia ${fase}. Nas chapas de referência este é o valor 72,5 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
     tensao_max_sistema: `Procura APENAS a tensão máxima do sistema/equipamento da travessia ${fase}. Nas chapas de referência este é o valor 155 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
@@ -210,32 +216,31 @@ async function lerCampoUnico(env, image, fase, campo) {
 function promptEletrico(fase) {
   return `Fotografia da travessia ${fase}.
 
-Nesta passagem procura APENAS estes dados para os campos do PTM:
+Nesta passagem procura APENAS:
+- fabricante = nome do fabricante da própria travessia
+- numero_serie = número de série / Serial No. / S.N. da própria travessia
 - bil = Nível de isolam. LL (BIL)
-- tensao_fase_terra = tensão nominal/fase-terra da travessia
-- tensao_max_sistema = tensão máxima indicada na chapa
-- corrente_nominal = corrente nominal
-- tipo_isolamento = tipo de isolamento, apenas se explícito
+- tensao_fase_terra = tensão fase-terra usada no PTM
+- tensao_max_sistema = tensão máxima usada no PTM
+- corrente_nominal = Ir / corrente nominal
 
-MAPEAMENTO DO PTM:
-- O valor de tensão da classe/serviço da travessia, como 72,5 kV nas chapas de referência, vai para tensao_fase_terra.
-- O valor superior de tensão máxima, como 155 kV nas chapas de referência, vai para tensao_max_sistema.
-- BIL/LI, como 325 kV nas chapas de referência, vai para bil.
-- Ir/Rated current, como 800 A nas chapas de referência, vai para corrente_nominal.
-- Estes números são APENAS exemplos de mapeamento. NUNCA os copies se não estiverem visíveis na fotografia atual.
+MAPEAMENTO DOS CAMPOS DO PTM:
+- Nas chapas de referência, 72,5 kV corresponde a Tensão Fase-Terra.
+- Nas chapas de referência, 155 kV corresponde a Tensão máxima.
+- Nas chapas de referência, 325 kV corresponde a BIL.
+- Nas chapas de referência, 800 A corresponde a Corrente nominal.
+- Estes valores são SÓ exemplos para compreender a posição/semântica dos campos. Nunca os copies se não estiverem visíveis na fotografia atual.
 
-REGRAS RÍGIDAS:
-- Lê os rótulos, a posição na tabela e a unidade antes de associar um valor.
-- Procura explicitamente TODOS os valores de tensão visíveis antes de decidir qual pertence a cada campo.
+REGRAS:
+- Cada fotografia é independente. Fabricante e número de série têm de vir desta fotografia.
+- Não copies fabricante ou série de outra travessia.
+- Não confundas número de série com modelo, tipo, ano, BIL, tensão, corrente, C1 ou C2.
 - Não confundas 72,5 kV com 155 kV.
-- Não confundas tensão (V/kV) com corrente (A/kA).
-- corrente_nominal só pode resultar de um valor identificado como corrente nominal/Ir/Rated current.
-- bil só pode resultar de BIL/LI/Lightning Impulse ou equivalente inequívoco.
-- Não inventes, não calcules e não uses valores de outros campos.
-- Se não conseguires distinguir tensao_fase_terra de tensao_max_sistema com segurança, deixa o campo incerto vazio.
-- tipo_isolamento só se estiver explicitamente indicado, por exemplo OIP, RIP ou RBP.
-- Em evidencias copia o rótulo/trecho curto da chapa que sustenta cada associação.
-- Valores devem conter apenas número e unidade, por exemplo "72.5 kV", "155 kV", "800 A".`;
+- Não confundas tensão com corrente.
+- Se não estiver visível ou a associação não for segura, devolve "".
+- Não inventes nem calcules.
+- Em evidencias copia um rótulo/trecho curto que justifique cada campo.
+- Valores elétricos devem conter apenas número e unidade.`;
 }
 function promptCapacitivo(fase) {
   return `Fotografia da travessia ${fase}.
@@ -276,6 +281,8 @@ function extrairObjeto(raw) {
 
 function validar(x) {
   const out = {
+    fabricante:"",
+    numero_serie:"",
     bil:"",
     tensao_fase_terra:"",
     tensao_max_sistema:"",
@@ -284,10 +291,11 @@ function validar(x) {
     c1_pf:"",
     fd_c2:"",
     c2_pf:"",
-    tipo_isolamento:"",
     evidencias:{}
   };
 
+  out.fabricante = validarTexto(x?.fabricante, 80);
+  out.numero_serie = validarTexto(x?.numero_serie, 60);
   out.bil = extrairValorUnidade(x?.bil, "tensao");
   out.tensao_fase_terra = extrairValorUnidade(x?.tensao_fase_terra, "tensao");
   out.tensao_max_sistema = extrairValorUnidade(x?.tensao_max_sistema, "tensao");
@@ -296,9 +304,6 @@ function validar(x) {
   out.c2_pf = extrairValorUnidade(x?.c2_pf, "pf");
   out.fd_c1 = validarFD(x?.fd_c1);
   out.fd_c2 = validarFD(x?.fd_c2);
-
-  const ti = limpar(x?.tipo_isolamento);
-  out.tipo_isolamento = sentinela(ti) ? "" : ti;
 
   // A evidência tem de ser compatível com o campo. Isto impede, por exemplo,
   // aceitar "800 A" como corrente se a evidência indicada pelo modelo for "Un 72.5 kV".
@@ -316,13 +321,19 @@ function validar(x) {
 
   const ev = ev0;
   for (const k of [
-    "bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
-    "fd_c1","c1_pf","fd_c2","c2_pf","tipo_isolamento"
+    "fabricante","numero_serie","bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
+    "fd_c1","c1_pf","fd_c2","c2_pf"
   ]) {
     out.evidencias[k] = out[k] ? limpar(ev[k]) : "";
   }
 
   return out;
+}
+
+function validarTexto(v,max) {
+  const x=limpar(v);
+  if(!x || sentinela(x) || x.length>max) return "";
+  return x;
 }
 
 function extrairValorUnidade(v,tipo) {

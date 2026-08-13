@@ -20,7 +20,7 @@ main{max-width:920px;margin:auto;padding:12px}.card{background:#fff;border:1px s
 select,button{font-size:14px;border:1px solid #aebbc3;border-radius:8px;background:white;padding:10px}select{width:100%}
 .primary{width:100%;margin-top:12px;background:#1976b9;color:#fff;border-color:#1976b9;font-weight:bold;font-size:17px}.primary:disabled{opacity:.55}
 .status{font-size:13px;margin-top:10px;line-height:1.45;color:#667780}.ok{color:#2a7549}.err{color:#a63232}.result{display:none}.result.show{display:block}
-.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:950px}th,td{border:1px solid #dbe2e6;padding:8px;font-size:12px;vertical-align:top}
+.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1120px}th,td{border:1px solid #dbe2e6;padding:8px;font-size:12px;vertical-align:top}
 th{background:#f3f6f8;text-align:left}td.value{font-weight:600}td.empty{color:#9aa5ab}.copy{padding:6px 8px;margin-top:5px}
 .evidence{font-size:10px;color:#708089;margin-top:4px;font-weight:400}.raw{white-space:pre-wrap;font-family:monospace;font-size:11px;background:#f8fafb;border-radius:8px;padding:10px;max-height:300px;overflow:auto}
 .note{background:#fff7dc;border:1px solid #e4d187;padding:9px;border-radius:7px;font-size:12px;margin-top:10px}
@@ -34,7 +34,7 @@ th{background:#f3f6f8;text-align:left}td.value{font-weight:600}td.empty{color:#9
 <div class="note">Só são preenchidos valores realmente identificados na chapa. O que não estiver indicado fica vazio.</div>
 </div></section>
 <section id="result" class="card result"><h2>📋 4 linhas para copiar para o PTM</h2><div class="tablewrap"><table>
-<thead><tr><th>Travessia</th><th>Nível de isolam. LL (BIL)</th><th>Tensão Fase-Terra</th><th>Tensão máx. do sistema</th><th>Corrente nominal</th><th>FD (C1)</th><th>Cap. (C1)</th><th>FD (C2)</th><th>Cap. (C2)</th><th>Tipo de isolamento</th></tr></thead>
+<thead><tr><th>Travessia</th><th>Fabricante</th><th>N.º de série</th><th>Nível de isolam. LL (BIL)</th><th>Tensão Fase-Terra</th><th>Tensão máx. do sistema</th><th>Corrente nominal</th><th>FD (C1)</th><th>Cap. (C1)</th><th>FD (C2)</th><th>Cap. (C2)</th></tr></thead>
 <tbody id="tbody"></tbody></table></div></section>
 <section id="rawCard" class="card result"><h2>🔎 Resposta técnica da leitura</h2><div id="raw" class="inside"></div></section>
 </main>
@@ -62,7 +62,7 @@ function fileToDataURL(file){return new Promise((resolve,reject)=>{const r=new F
 function cell(obj,key){const v=(obj&&obj[key])||"";const ev=(obj&&obj.evidencias&&obj.evidencias[key])||"";return `<td class="${v?"value":"empty"}">${v?esc(v):"Não indicado"}${ev?`<div class="evidence">${esc(ev)}</div>`:""}${v?`<button class="copy" data-copy="${esc(v)}">📋</button>`:""}</td>`}
 function render(data){
  const fases={A:{},B:{},C:{},N:{}};(data.resultados||[]).forEach(r=>{if(r?.resultado&&["A","B","C","N"].includes(r.fase))fases[r.fase]=r.resultado});
- $("#tbody").innerHTML=["A","B","C","N"].map(p=>{const x=fases[p]||{};return `<tr><th>${p}</th>${cell(x,"bil")}${cell(x,"tensao_fase_terra")}${cell(x,"tensao_max_sistema")}${cell(x,"corrente_nominal")}${cell(x,"fd_c1")}${cell(x,"c1_pf")}${cell(x,"fd_c2")}${cell(x,"c2_pf")}${cell(x,"tipo_isolamento")}</tr>`}).join("");
+ $("#tbody").innerHTML=["A","B","C","N"].map(p=>{const x=fases[p]||{};return `<tr><th>${p}</th>${cell(x,"fabricante")}${cell(x,"numero_serie")}${cell(x,"bil")}${cell(x,"tensao_fase_terra")}${cell(x,"tensao_max_sistema")}${cell(x,"corrente_nominal")}${cell(x,"fd_c1")}${cell(x,"c1_pf")}${cell(x,"fd_c2")}${cell(x,"c2_pf")}</tr>`}).join("");
  document.querySelectorAll(".copy").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copy||"")}catch{}b.textContent="✓"});
  $("#result").classList.add("show");
 }
