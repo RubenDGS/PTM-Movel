@@ -126,10 +126,18 @@ export default {
           }
 
           for (const campo of faltam) {
-            const extra = await lerCampoUnico(env, image, fase, campo);
-            if (extra?.valor) {
-              combinado[campo] = extra.valor;
-              combinado.evidencias[campo] = extra.evidencia || "";
+            // C1, C2 e corrente são os campos que mais escapam nas chapas reais.
+            // Faz até 3 tentativas independentes e só aceita um resultado
+            // compatível com a unidade/semântica esperada.
+            const tentativas = ["normal","linha","visual"];
+            for (const modo of tentativas) {
+              const extra = await lerCampoUnico(env, image, fase, campo, modo);
+              const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
+              if (valor) {
+                combinado[campo] = valor;
+                combinado.evidencias[campo] = extra?.evidencia || "";
+                break;
+              }
             }
           }
 
@@ -172,17 +180,25 @@ async function lerGrupo(env, image, prompt, schema) {
 }
 
 
-async function lerCampoUnico(env, image, fase, campo) {
+async function lerCampoUnico(env, image, fase, campo, modo='normal') {
   const mapa = {
     fabricante: `Procura APENAS o nome do FABRICANTE da travessia ${fase}. Não devolvas modelo, país, norma ou número de série. Devolve exatamente o fabricante visível e uma evidência curta. Se não estiver legível, devolve vazio.`,
     numero_serie: `Procura APENAS o NÚMERO DE SÉRIE / Serial No. / S.N. da travessia ${fase}. Não confundas com modelo, tipo, ano ou valores elétricos. Devolve exatamente o número/código visível e uma evidência curta. Se não estiver legível, devolve vazio.`,
     bil: `Procura APENAS o BIL/LI/Lightning Impulse da travessia ${fase}. Devolve o valor com unidade kV/V e uma evidência curta. Se não estiver visível, devolve vazio.`,
     tensao_fase_terra: `Procura APENAS a tensão fase-terra/phase-to-ground/phase-earth da travessia ${fase}. Nas chapas de referência este é o valor 72,5 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
     tensao_max_sistema: `Procura APENAS a tensão máxima do sistema/equipamento da travessia ${fase}. Nas chapas de referência este é o valor 155 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
-    corrente_nominal: `Procura APENAS a corrente nominal Ir/Rated current da travessia ${fase}. Nas chapas de referência é 800 A, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
-    c1_pf: `Procura APENAS a capacitância C1 da travessia ${fase}. Tem de ser o valor associado a C1 e em pF. Não devolvas FD/PF. Devolve só valor+unidade e evidência curta.`,
-    c2_pf: `Procura APENAS a capacitância C2 da travessia ${fase}. Tem de ser o valor associado a C2 e em pF. Não devolvas FD/PF. Devolve só valor+unidade e evidência curta.`
+    corrente_nominal: `Procura APENAS a corrente nominal Ir/Rated current da travessia ${fase}. Localiza primeiro o rótulo "Ir", "Rated current" ou equivalente e lê o número em A/kA imediatamente associado. Nas chapas de referência é 800 A, mas NÃO copies esse número se não estiver visível. Não aceites Un, Um, kV, C1, C2 ou BIL. Devolve só valor+unidade e uma evidência que contenha o rótulo de corrente e o valor.`,
+    c1_pf: `Procura APENAS a CAPACITÂNCIA C1 da travessia ${fase}. Localiza literalmente "C1" e depois o respetivo número cuja unidade é pF. NÃO devolvas o P.F./FD/tan delta que costuma aparecer perto de C1. O resultado só é válido se houver um número em pF associado a C1. Devolve valor+unidade e evidência incluindo "C1" e "pF".`,
+    c2_pf: `Procura APENAS a CAPACITÂNCIA C2 da travessia ${fase}. Localiza literalmente "C2" e depois o respetivo número cuja unidade é pF. NÃO devolvas o P.F./FD/tan delta que costuma aparecer perto de C2. O resultado só é válido se houver um número em pF associado a C2. Devolve valor+unidade e evidência incluindo "C2" e "pF".`
   };
+
+  const estrategia = {
+    normal: "Lê o rótulo e o valor associado.",
+    linha: "Segue visualmente a mesma linha/célula do rótulo até ao respetivo valor; não uses números da linha vizinha.",
+    visual: "Ignora os restantes dados e faz uma inspeção visual minuciosa apenas da pequena zona onde este campo aparece."
+  }[modo] || "";
+
+  mapa[campo] += "\nESTRATÉGIA DESTA TENTATIVA: " + estrategia;
 
   const schema = {
     type:"object",
@@ -328,6 +344,35 @@ function validar(x) {
   }
 
   return out;
+}
+
+function validarCampoFallback(campo, valor, evidencia) {
+  const v=limpar(valor), e=limpar(evidencia);
+  if(!v || sentinela(v)) return "";
+
+  if(campo==="corrente_nominal") {
+    const vv=extrairValorUnidade(v,"corrente");
+    if(!vv) return "";
+    // Evidence must not be voltage-only. Prefer explicit current labels,
+    // but also accept a clean A/kA evidence from a single-field read.
+    if(/\b(?:Un|Um|kV|volt)\b/i.test(e) && !/\b(?:Ir|rated\\s*current|current|corrente)\b/i.test(e)) return "";
+    return vv;
+  }
+
+  if(campo==="c1_pf" || campo==="c2_pf") {
+    const vv=extrairValorUnidade(v,"pf");
+    if(!vv) return "";
+    const tag=campo==="c1_pf" ? /\\bC1\\b/i : /\\bC2\\b/i;
+    // The evidence should point to the correct capacitor. If the model
+    // returns only "299 pF", accept it because this pass asked for one field only.
+    if(e && /\\bC[12]\\b/i.test(e) && !tag.test(e)) return "";
+    return vv;
+  }
+
+  if(campo==="bil") return extrairValorUnidade(v,"tensao");
+  if(campo==="tensao_fase_terra" || campo==="tensao_max_sistema") return extrairValorUnidade(v,"tensao");
+  if(campo==="fabricante" || campo==="numero_serie") return validarTexto(v,80);
+  return v;
 }
 
 function validarTexto(v,max) {
