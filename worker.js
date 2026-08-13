@@ -77,6 +77,7 @@ export default {
         const nome = item.name || "Fotografia";
         const fase = String(item.fase || "").toUpperCase();
         const image = item.image || "";
+        const imageEnhanced = item.image_enhanced || image;
 
         if (!["A","B","C","N"].includes(fase)) {
           resultados.push({nome,fase,erro:"Fase inválida. Escolhe A, B, C ou N."});
@@ -145,7 +146,8 @@ export default {
 
             // Uma única recuperação focada para o campo em falta.
             // É exatamente a mesma rotina independentemente da fase.
-            const extra = await lerCampoSequencial(env, image, fase, campo);
+            const imagemFallback = ["corrente_nominal","c1_pf","c2_pf"].includes(campo) ? imageEnhanced : image;
+            const extra = await lerCampoSequencial(env, imagemFallback, fase, campo);
             const valor = validarCampoFallback(campo, extra?.valor, extra?.evidencia);
 
             if (valor) {
