@@ -126,9 +126,7 @@ export default {
           }
 
           for (const campo of faltam) {
-            // C1, C2 e corrente são os campos que mais escapam nas chapas reais.
-            // Faz até 3 tentativas independentes e só aceita um resultado
-            // compatível com a unidade/semântica esperada.
+            // Mantém as 3 tentativas que já funcionam bem em A/B/C.
             const tentativas = ["normal","linha","visual"];
             for (const modo of tentativas) {
               const extra = await lerCampoUnico(env, image, fase, campo, modo);
@@ -137,6 +135,18 @@ export default {
                 combinado[campo] = valor;
                 combinado.evidencias[campo] = extra?.evidencia || "";
                 break;
+              }
+            }
+
+            // A chapa N de referência é a mais difícil. Se Ir/C1/C2 continuarem
+            // vazios, usa uma passagem adicional desenhada só para a zona da tabela.
+            if (fase === "N" && !limpar(combinado[campo]) &&
+                ["corrente_nominal","c1_pf","c2_pf"].includes(campo)) {
+              const extraN = await lerCampoN(env, image, campo);
+              const valorN = validarCampoFallback(campo, extraN?.valor, extraN?.evidencia);
+              if (valorN) {
+                combinado[campo] = valorN;
+                combinado.evidencias[campo] = extraN?.evidencia || "";
               }
             }
           }
@@ -226,6 +236,55 @@ async function lerCampoUnico(env, image, fase, campo, modo='normal') {
 
   const obj = extrairObjeto(raw);
   if (!obj || typeof obj !== "object") return null;
+  return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
+}
+
+
+async function lerCampoN(env, image, campo) {
+  const instrucao = {
+    corrente_nominal:
+      `Inspeciona minuciosamente esta chapa da travessia N. Procura SOMENTE a linha/célula de corrente nominal, marcada por "Ir", "Rated current" ou equivalente. Lê o número em A ou kA associado a esse rótulo. Não uses Un/Um, valores em kV, BIL, C1 ou C2.`,
+    c1_pf:
+      `Inspeciona minuciosamente a zona de dados capacitivos desta chapa da travessia N. Procura SOMENTE "C1" e a CAPACITÂNCIA associada em pF. Ignora o valor P.F./FD em percentagem ou decimal. Segue a mesma linha/coluna de C1 até ao número em pF.`,
+    c2_pf:
+      `Inspeciona minuciosamente a zona de dados capacitivos desta chapa da travessia N. Procura SOMENTE "C2" e a CAPACITÂNCIA associada em pF. Ignora o valor P.F./FD em percentagem ou decimal. Segue a mesma linha/coluna de C2 até ao número em pF.`
+  }[campo];
+
+  const schema = {
+    type:"object",
+    additionalProperties:false,
+    properties:{
+      valor:{type:"string"},
+      evidencia:{type:"string"},
+      confianca:{type:"string"}
+    },
+    required:["valor","evidencia","confianca"]
+  };
+
+  const raw = await env.AI.run(MODEL,{
+    messages:[
+      {
+        role:"system",
+        content:"És um leitor visual de chapas técnicas. Nesta tarefa há apenas UM campo a extrair. Examina caracteres pequenos e a relação espacial entre rótulo, unidade e valor. Nunca uses os valores dos exemplos do prompt como resposta; só a fotografia conta."
+      },
+      {
+        role:"user",
+        content:[
+          {type:"text",text:instrucao + `\\nSe não estiver realmente legível, devolve valor vazio. Em evidencia inclui o rótulo e o valor que viste. Em confianca devolve alta, media ou baixa.`},
+          {type:"image_url",image_url:{url:image}}
+        ]
+      }
+    ],
+    guided_json:schema,
+    temperature:0,
+    max_tokens:350,
+    stream:false
+  });
+
+  const obj=extrairObjeto(raw);
+  if(!obj || typeof obj!=="object") return null;
+  // Não aceitamos uma adivinhação declaradamente de baixa confiança.
+  if(/^baixa$/i.test(limpar(obj.confianca))) return null;
   return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
 }
 
