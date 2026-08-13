@@ -72,57 +72,71 @@ export default {
         return resposta({ ok:false, erro:"Não foram recebidas fotografias." }, 400);
       }
 
-      const resultados = [];
-
-      for (const item of images) {
+      const processar = async (item) => {
         const nome = item.name || "Fotografia";
         const fase = String(item.fase || "").toUpperCase();
         const image = item.image || "";
 
         if (!["A","B","C","N"].includes(fase)) {
-          resultados.push({ nome, fase, erro:"Fase inválida. Escolhe A, B, C ou N." });
-          continue;
+          return { nome, fase, erro:"Fase inválida. Escolhe A, B, C ou N." };
         }
 
         if (!image) {
-          resultados.push({ nome, fase, erro:"Imagem não recebida." });
-          continue;
+          return { nome, fase, erro:"Imagem não recebida." };
         }
 
         try {
-          // 1) Leitura visual direta da fotografia.
+          // 1) Leitura visual principal.
           const direto = await lerVisual(env, image);
+          const validadoDireto = validar(direto);
 
-          // 2) Transcrição independente da chapa através do serviço toMarkdown.
-          //    A Cloudflare usa internamente modelos próprios para converter imagens
-          //    em conteúdo textual/Markdown.
+          // 2) Só chama o segundo motor se ainda houver campos importantes vazios.
+          const faltam = camposEmFalta(validadoDireto);
+
+          if (!faltam.length) {
+            return {
+              nome,
+              fase,
+              resultado: validadoDireto,
+              transcricao: ""
+            };
+          }
+
+          // 3) Transcrição independente apenas como fallback.
           const transcricao = await transcreverImagem(env, nome, image);
 
-          // 3) Organização APENAS do texto transcrito.
-          const doTexto = transcricao
-            ? await organizarTranscricao(env, transcricao)
-            : vazio();
+          if (!transcricao) {
+            return {
+              nome,
+              fase,
+              resultado: validadoDireto,
+              transcricao: ""
+            };
+          }
 
-          // 4) A leitura visual é a base. A transcrição só preenche campos vazios.
-          //    Nunca substitui um valor já lido.
+          // 4) Organiza apenas os campos que faltam.
+          const doTexto = await organizarTranscricao(env, transcricao, faltam);
           const combinado = combinarSemSobrescrever(direto, doTexto);
 
-          resultados.push({
+          return {
             nome,
             fase,
             resultado: validar(combinado),
-            transcricao: transcricao || ""
-          });
+            transcricao
+          };
 
         } catch (e) {
-          resultados.push({
+          return {
             nome,
             fase,
             erro: e?.message || String(e)
-          });
+          };
         }
-      }
+      };
 
+      // As quatro fotografias são tratadas em paralelo para não ficar
+      // "a pensar" uma a uma durante muito tempo.
+      const resultados = await Promise.all(images.map(processar));
       return resposta({ ok:true, resultados });
 
     } catch (e) {
@@ -179,7 +193,7 @@ async function transcreverImagem(env, nome, dataUrl) {
   }
 }
 
-async function organizarTranscricao(env, texto) {
+async function organizarTranscricao(env, texto, faltam) {
   const raw = await env.AI.run(VISION_MODEL, {
     messages: [
       {
@@ -192,6 +206,9 @@ async function organizarTranscricao(env, texto) {
         role: "user",
         content:
           promptCampos("transcrição") +
+          "\n\nPREENCHE APENAS ESTES CAMPOS QUE A LEITURA VISUAL NÃO CONSEGUIU: " +
+          (Array.isArray(faltam) ? faltam.join(", ") : "") +
+          "\nOs restantes devem ficar vazios." +
           "\n\nTRANSCRIÇÃO DA CHAPA:\n" + texto
       }
     ],
@@ -237,6 +254,15 @@ REGRAS:
 - Nunca devolvas N/A, unknown ou valores inventados.
 - Em evidencias inclui um pequeno trecho/rótulo que sustente cada valor preenchido.
 - Nos campos elétricos devolve apenas valor e unidade, sem o nome do campo.`;
+}
+
+function camposEmFalta(x) {
+  const essenciais = [
+    "fabricante","numero_serie","bil","tensao_fase_terra",
+    "tensao_max_sistema","corrente_nominal","fd_c1","c1_pf",
+    "fd_c2","c2_pf"
+  ];
+  return essenciais.filter(k => !limpar(x?.[k]));
 }
 
 function combinarSemSobrescrever(principal, auxiliar) {
