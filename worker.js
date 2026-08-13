@@ -155,21 +155,33 @@ async function lerGrupo(env, image, prompt, schema) {
 function promptEletrico(fase) {
   return `Fotografia da travessia ${fase}.
 
-Nesta passagem procura APENAS estes 5 dados, ignorando C1/C2:
-- bil: BIL / LI / Lightning Impulse / nível de isolamento LL
-- tensao_fase_terra: apenas se estiver explicitamente identificada como fase-terra / phase-to-ground / phase-earth
-- tensao_max_sistema: Um / Highest voltage for equipment / Maximum system voltage
-- corrente_nominal: Ir / Rated current / Current rating
-- tipo_isolamento: apenas se estiver explicitamente indicado, por exemplo OIP, RIP ou RBP
+Nesta passagem procura APENAS estes dados para os campos do PTM:
+- bil = Nível de isolam. LL (BIL)
+- tensao_fase_terra = tensão nominal/fase-terra da travessia
+- tensao_max_sistema = tensão máxima indicada na chapa
+- corrente_nominal = corrente nominal
+- tipo_isolamento = tipo de isolamento, apenas se explícito
 
-REGRAS:
-- Se não existir ou não estiver legível, devolve "".
-- Não uses Um como tensão fase-terra.
-- Não inventes nem calcules.
-- Em evidencias copia um rótulo curto da chapa que justifique o valor.
-- Valores devem conter apenas o valor e unidade, sem o nome do campo. Ex.: "72.5 kV", não "Um 72.5 kV".`;
+MAPEAMENTO DO PTM:
+- O valor de tensão da classe/serviço da travessia, como 72,5 kV nas chapas de referência, vai para tensao_fase_terra.
+- O valor superior de tensão máxima, como 155 kV nas chapas de referência, vai para tensao_max_sistema.
+- BIL/LI, como 325 kV nas chapas de referência, vai para bil.
+- Ir/Rated current, como 800 A nas chapas de referência, vai para corrente_nominal.
+- Estes números são APENAS exemplos de mapeamento. NUNCA os copies se não estiverem visíveis na fotografia atual.
+
+REGRAS RÍGIDAS:
+- Lê os rótulos, a posição na tabela e a unidade antes de associar um valor.
+- Procura explicitamente TODOS os valores de tensão visíveis antes de decidir qual pertence a cada campo.
+- Não confundas 72,5 kV com 155 kV.
+- Não confundas tensão (V/kV) com corrente (A/kA).
+- corrente_nominal só pode resultar de um valor identificado como corrente nominal/Ir/Rated current.
+- bil só pode resultar de BIL/LI/Lightning Impulse ou equivalente inequívoco.
+- Não inventes, não calcules e não uses valores de outros campos.
+- Se não conseguires distinguir tensao_fase_terra de tensao_max_sistema com segurança, deixa o campo incerto vazio.
+- tipo_isolamento só se estiver explicitamente indicado, por exemplo OIP, RIP ou RBP.
+- Em evidencias copia o rótulo/trecho curto da chapa que sustenta cada associação.
+- Valores devem conter apenas número e unidade, por exemplo "72.5 kV", "155 kV", "800 A".`;
 }
-
 function promptCapacitivo(fase) {
   return `Fotografia da travessia ${fase}.
 
@@ -233,6 +245,12 @@ function validar(x) {
   const ti = limpar(x?.tipo_isolamento);
   out.tipo_isolamento = sentinela(ti) ? "" : ti;
 
+  // A evidência tem de ser compatível com o campo. Isto impede, por exemplo,
+  // aceitar "800 A" como corrente se a evidência indicada pelo modelo for "Un 72.5 kV".
+  const ev0 = x?.evidencias && typeof x.evidencias === "object" ? x.evidencias : {};
+  if (out.corrente_nominal && !evidenciaCorrente(ev0.corrente_nominal)) out.corrente_nominal = "";
+  if (out.bil && !evidenciaBIL(ev0.bil)) out.bil = "";
+
   if (
     out.tensao_fase_terra &&
     out.tensao_max_sistema &&
@@ -241,7 +259,7 @@ function validar(x) {
     out.tensao_fase_terra = "";
   }
 
-  const ev = x?.evidencias && typeof x.evidencias === "object" ? x.evidencias : {};
+  const ev = ev0;
   for (const k of [
     "bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
     "fd_c1","c1_pf","fd_c2","c2_pf","tipo_isolamento"
@@ -289,6 +307,21 @@ function normal(v) {
 
 function sentinela(v) {
   return /^(?:n\/?a|na|não indicado|nao indicado|unknown|desconhecido|none|null|-+)$/i.test(limpar(v));
+}
+
+
+function evidenciaCorrente(v) {
+  const s = limpar(v);
+  if (!s) return false;
+  return /\b(?:Ir|rated\s*current|current\s*rating|corrente\s*nominal)\b/i.test(s) &&
+         /\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i.test(s);
+}
+
+function evidenciaBIL(v) {
+  const s = limpar(v);
+  if (!s) return false;
+  return /\b(?:BIL|LI|lightning\s*impulse)\b/i.test(s) &&
+         /\d+(?:[.,]\d+)?\s*(?:kV|V)?\b/i.test(s);
 }
 
 function parseJSONSeguro(texto) {
