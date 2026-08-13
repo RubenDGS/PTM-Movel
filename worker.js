@@ -6,68 +6,68 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type"
 };
 
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    bil: { type: "string" },
-    tensao_fase_terra: { type: "string" },
-    tensao_max_sistema: { type: "string" },
-    corrente_nominal: { type: "string" },
-    fd_c1: { type: "string" },
-    c1_pf: { type: "string" },
-    fd_c2: { type: "string" },
-    c2_pf: { type: "string" },
-    tipo_isolamento: { type: "string" },
-    evidencias: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        bil: { type: "string" },
-        tensao_fase_terra: { type: "string" },
-        tensao_max_sistema: { type: "string" },
-        corrente_nominal: { type: "string" },
-        fd_c1: { type: "string" },
-        c1_pf: { type: "string" },
-        fd_c2: { type: "string" },
-        c2_pf: { type: "string" },
-        tipo_isolamento: { type: "string" }
+const SCHEMA_ELETRICO = {
+  type:"object",
+  additionalProperties:false,
+  properties:{
+    bil:{type:"string"},
+    tensao_fase_terra:{type:"string"},
+    tensao_max_sistema:{type:"string"},
+    corrente_nominal:{type:"string"},
+    tipo_isolamento:{type:"string"},
+    evidencias:{
+      type:"object",
+      additionalProperties:false,
+      properties:{
+        bil:{type:"string"},
+        tensao_fase_terra:{type:"string"},
+        tensao_max_sistema:{type:"string"},
+        corrente_nominal:{type:"string"},
+        tipo_isolamento:{type:"string"}
       },
-      required: [
-        "bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
-        "fd_c1","c1_pf","fd_c2","c2_pf","tipo_isolamento"
-      ]
+      required:["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","tipo_isolamento"]
     }
   },
-  required: [
-    "bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
-    "fd_c1","c1_pf","fd_c2","c2_pf","tipo_isolamento","evidencias"
-  ]
+  required:["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","tipo_isolamento","evidencias"]
+};
+
+const SCHEMA_CAP = {
+  type:"object",
+  additionalProperties:false,
+  properties:{
+    fd_c1:{type:"string"},
+    c1_pf:{type:"string"},
+    fd_c2:{type:"string"},
+    c2_pf:{type:"string"},
+    evidencias:{
+      type:"object",
+      additionalProperties:false,
+      properties:{
+        fd_c1:{type:"string"},
+        c1_pf:{type:"string"},
+        fd_c2:{type:"string"},
+        c2_pf:{type:"string"}
+      },
+      required:["fd_c1","c1_pf","fd_c2","c2_pf"]
+    }
+  },
+  required:["fd_c1","c1_pf","fd_c2","c2_pf","evidencias"]
 };
 
 export default {
   async fetch(request, env) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS });
-    }
+    if (request.method === "OPTIONS") return new Response(null, { headers:CORS });
 
     const url = new URL(request.url);
-
     if (request.method !== "POST" || (url.pathname !== "/" && url.pathname !== "/analisar")) {
-      return resposta({ ok:false, erro:"Método ou endereço não permitido." }, 405);
+      return resposta({ok:false,erro:"Método ou endereço não permitido."},405);
     }
-
-    if (!env.AI) {
-      return resposta({ ok:false, erro:'Binding "AI" não encontrado.' }, 500);
-    }
+    if (!env.AI) return resposta({ok:false,erro:'Binding "AI" não encontrado.'},500);
 
     try {
       const body = await request.json();
       const images = Array.isArray(body.images) ? body.images : [];
-
-      if (!images.length) {
-        return resposta({ ok:false, erro:"Não foram recebidas fotografias." }, 400);
-      }
+      if (!images.length) return resposta({ok:false,erro:"Não foram recebidas fotografias."},400);
 
       const resultados = [];
 
@@ -77,116 +77,122 @@ export default {
         const image = item.image || "";
 
         if (!["A","B","C","N"].includes(fase)) {
-          resultados.push({ nome, fase, erro:"Fase inválida. Escolhe A, B, C ou N." });
+          resultados.push({nome,fase,erro:"Fase inválida. Escolhe A, B, C ou N."});
           continue;
         }
-
         if (!image) {
-          resultados.push({ nome, fase, erro:"Imagem não recebida." });
+          resultados.push({nome,fase,erro:"Imagem não recebida."});
           continue;
         }
 
         try {
-          const prompt = criarPergunta(fase);
+          const [eletrico, capacitivo] = await Promise.all([
+            lerGrupo(env, image, promptEletrico(fase), SCHEMA_ELETRICO),
+            lerGrupo(env, image, promptCapacitivo(fase), SCHEMA_CAP)
+          ]);
 
-          const raw = await env.AI.run(MODEL, {
-            messages: [
-              {
-                role: "system",
-                content: "És um leitor técnico de chapas de travessias elétricas. Extrai apenas dados explicitamente visíveis. Nunca inventes nem calcules valores em falta."
-              },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  { type: "image_url", image_url: { url: image } }
-                ]
-              }
-            ],
-            guided_json: SCHEMA,
-            temperature: 0,
-            max_tokens: 1200,
-            stream: false
-          });
+          const combinado = {
+            bil: eletrico?.bil || "",
+            tensao_fase_terra: eletrico?.tensao_fase_terra || "",
+            tensao_max_sistema: eletrico?.tensao_max_sistema || "",
+            corrente_nominal: eletrico?.corrente_nominal || "",
+            tipo_isolamento: eletrico?.tipo_isolamento || "",
+            fd_c1: capacitivo?.fd_c1 || "",
+            c1_pf: capacitivo?.c1_pf || "",
+            fd_c2: capacitivo?.fd_c2 || "",
+            c2_pf: capacitivo?.c2_pf || "",
+            evidencias: {
+              bil: eletrico?.evidencias?.bil || "",
+              tensao_fase_terra: eletrico?.evidencias?.tensao_fase_terra || "",
+              tensao_max_sistema: eletrico?.evidencias?.tensao_max_sistema || "",
+              corrente_nominal: eletrico?.evidencias?.corrente_nominal || "",
+              tipo_isolamento: eletrico?.evidencias?.tipo_isolamento || "",
+              fd_c1: capacitivo?.evidencias?.fd_c1 || "",
+              c1_pf: capacitivo?.evidencias?.c1_pf || "",
+              fd_c2: capacitivo?.evidencias?.fd_c2 || "",
+              c2_pf: capacitivo?.evidencias?.c2_pf || ""
+            }
+          };
 
-          const obj = extrairObjeto(raw);
-
-          if (!obj) {
-            resultados.push({
-              nome,
-              fase,
-              erro:"O modelo não devolveu dados estruturados utilizáveis."
-            });
-            continue;
-          }
-
-          resultados.push({
-            nome,
-            fase,
-            resultado: validar(obj)
-          });
+          resultados.push({nome,fase,resultado:validar(combinado)});
 
         } catch (e) {
-          resultados.push({
-            nome,
-            fase,
-            erro: e?.message || String(e)
-          });
+          resultados.push({nome,fase,erro:e?.message || String(e)});
         }
       }
 
-      return resposta({ ok:true, resultados });
-
+      return resposta({ok:true,resultados});
     } catch (e) {
-      return resposta({ ok:false, erro:e?.message || String(e) }, 500);
+      return resposta({ok:false,erro:e?.message || String(e)},500);
     }
   }
 };
 
-function criarPergunta(fase) {
-  return `Esta fotografia é da travessia ${fase}.
+async function lerGrupo(env, image, prompt, schema) {
+  const raw = await env.AI.run(MODEL,{
+    messages:[
+      {
+        role:"system",
+        content:"Lê chapas técnicas de travessias elétricas com rigor. Usa só dados visíveis. Nunca inventes, calcules ou completes valores ausentes."
+      },
+      {
+        role:"user",
+        content:[
+          {type:"text",text:prompt},
+          {type:"image_url",image_url:{url:image}}
+        ]
+      }
+    ],
+    guided_json:schema,
+    temperature:0,
+    max_tokens:900,
+    stream:false
+  });
 
-Preenche APENAS uma linha da secção "Travessias" do PTM com estes campos:
+  return extrairObjeto(raw);
+}
 
-1. bil = Nível de isolam. LL (BIL)
-2. tensao_fase_terra = Tensão Fase-Terra
-3. tensao_max_sistema = Tensão máx. do sistema
-4. corrente_nominal = Corrente nominal
-5. fd_c1 = FD (C1)
-6. c1_pf = Cap. (C1)
-7. fd_c2 = FD (C2)
-8. c2_pf = Cap. (C2)
-9. tipo_isolamento = Tipo de isolamento
+function promptEletrico(fase) {
+  return `Fotografia da travessia ${fase}.
+
+Nesta passagem procura APENAS estes 5 dados, ignorando C1/C2:
+- bil: BIL / LI / Lightning Impulse / nível de isolamento LL
+- tensao_fase_terra: apenas se estiver explicitamente identificada como fase-terra / phase-to-ground / phase-earth
+- tensao_max_sistema: Um / Highest voltage for equipment / Maximum system voltage
+- corrente_nominal: Ir / Rated current / Current rating
+- tipo_isolamento: apenas se estiver explicitamente indicado, por exemplo OIP, RIP ou RBP
 
 REGRAS:
-- Usa somente informação que esteja realmente escrita/visível na chapa.
-- Não calcules e não deduzas valores.
-- Se um campo não existir, não estiver legível, ou não houver associação inequívoca, devolve string vazia "".
-- Nunca uses "N/A", "não indicado", "unknown" ou equivalentes: usa "".
-- Não dupliques um valor entre campos diferentes.
-- BIL, LI ou Lightning Impulse -> bil.
-- Um, Highest voltage for equipment, Maximum system voltage -> tensao_max_sistema.
-- Ir, Rated current, Current rating -> corrente_nominal.
-- C1 com unidade pF -> c1_pf.
-- C2 com unidade pF -> c2_pf.
-- FD C1, PF C1, power factor C1, tan delta C1 -> fd_c1.
-- FD C2, PF C2, power factor C2, tan delta C2 -> fd_c2.
-- tensao_fase_terra só pode ser preenchida se estiver explicitamente identificada como fase-terra, phase-to-ground, phase-earth ou equivalente inequívoco. NÃO uses Um nesse campo.
-- tipo_isolamento só pode ser preenchido se estiver explicitamente identificado, por exemplo OIP, RIP, RBP ou descrição inequívoca.
-- Não devolvas fabricante, modelo, número de série, ano ou qualquer outro dado.
-- Em evidencias, copia apenas um rótulo curto da chapa que justifique cada valor preenchido.`;
+- Se não existir ou não estiver legível, devolve "".
+- Não uses Um como tensão fase-terra.
+- Não inventes nem calcules.
+- Em evidencias copia um rótulo curto da chapa que justifique o valor.
+- Valores devem conter apenas o valor e unidade, sem o nome do campo. Ex.: "72.5 kV", não "Um 72.5 kV".`;
+}
+
+function promptCapacitivo(fase) {
+  return `Fotografia da travessia ${fase}.
+
+Nesta passagem procura APENAS:
+- fd_c1: FD/PF/tan delta associado a C1
+- c1_pf: capacitância C1 em pF
+- fd_c2: FD/PF/tan delta associado a C2
+- c2_pf: capacitância C2 em pF
+
+REGRAS:
+- Não confundas C1 com C2.
+- C1 e C2 têm de vir com unidade pF.
+- FD/PF pode vir em % ou decimal.
+- Se um campo não existir ou não estiver legível, devolve "".
+- Não inventes nem calcules.
+- Em evidencias copia um rótulo curto da chapa que justifique o valor.`;
 }
 
 function extrairObjeto(raw) {
-  // guided_json pode vir já como objeto em response
-  if (raw && typeof raw.response === "object" && raw.response !== null) {
-    return raw.response;
-  }
-  if (raw?.result && typeof raw.result.response === "object" && raw.result.response !== null) {
-    return raw.result.response;
-  }
+  if (raw && typeof raw.response === "object" && raw.response !== null) return raw.response;
+  if (raw?.result && typeof raw.result.response === "object" && raw.result.response !== null) return raw.result.response;
 
-  const textos = [
+  const candidatos = [
     raw?.response,
     raw?.result?.response,
     raw?.answer,
@@ -194,12 +200,11 @@ function extrairObjeto(raw) {
     typeof raw === "string" ? raw : null
   ].filter(v => typeof v === "string");
 
-  for (const texto of textos) {
-    const obj = parseJSONSeguro(texto);
-    if (obj) return obj;
+  for (const t of candidatos) {
+    const o = parseJSONSeguro(t);
+    if (o) return o;
   }
-
-  return null;
+  return {};
 }
 
 function validar(x) {
@@ -216,29 +221,18 @@ function validar(x) {
     evidencias:{}
   };
 
-  out.bil = aceita(x?.bil, /\b(?:kV|V)\b/i);
-  out.tensao_fase_terra = aceita(x?.tensao_fase_terra, /\b(?:kV|V)\b/i);
-  out.tensao_max_sistema = aceita(x?.tensao_max_sistema, /\b(?:kV|V)\b/i);
-  out.corrente_nominal = aceita(x?.corrente_nominal, /\b(?:kA|A)\b/i);
-
-  out.c1_pf = aceita(x?.c1_pf, /\bpF\b/i);
-  out.c2_pf = aceita(x?.c2_pf, /\bpF\b/i);
-
+  out.bil = extrairValorUnidade(x?.bil, "tensao");
+  out.tensao_fase_terra = extrairValorUnidade(x?.tensao_fase_terra, "tensao");
+  out.tensao_max_sistema = extrairValorUnidade(x?.tensao_max_sistema, "tensao");
+  out.corrente_nominal = extrairValorUnidade(x?.corrente_nominal, "corrente");
+  out.c1_pf = extrairValorUnidade(x?.c1_pf, "pf");
+  out.c2_pf = extrairValorUnidade(x?.c2_pf, "pf");
   out.fd_c1 = validarFD(x?.fd_c1);
   out.fd_c2 = validarFD(x?.fd_c2);
 
   const ti = limpar(x?.tipo_isolamento);
-  out.tipo_isolamento = ti.length <= 60 ? ti : "";
+  out.tipo_isolamento = sentinela(ti) ? "" : ti;
 
-  // Não aceita valores sentinela como N/A
-  for (const k of [
-    "bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal",
-    "fd_c1","c1_pf","fd_c2","c2_pf","tipo_isolamento"
-  ]) {
-    if (sentinela(out[k])) out[k] = "";
-  }
-
-  // Um e Tensão Fase-Terra não podem ser o mesmo valor por simples duplicação.
   if (
     out.tensao_fase_terra &&
     out.tensao_max_sistema &&
@@ -258,6 +252,30 @@ function validar(x) {
   return out;
 }
 
+function extrairValorUnidade(v,tipo) {
+  const s = limpar(v);
+  if (!s || sentinela(s)) return "";
+
+  let re;
+  if (tipo === "tensao") re = /-?\d+(?:[.,]\d+)?\s*(?:kV|V)\b/i;
+  else if (tipo === "corrente") re = /-?\d+(?:[.,]\d+)?\s*(?:kA|A)\b/i;
+  else if (tipo === "pf") re = /-?\d+(?:[.,]\d+)?\s*pF\b/i;
+  else return "";
+
+  const m = s.match(re);
+  return m ? m[0].trim() : "";
+}
+
+function validarFD(v) {
+  const s = limpar(v);
+  if (!s || sentinela(s)) return "";
+  const m1 = s.match(/\d+(?:[.,]\d+)?\s*%/);
+  if (m1) return m1[0].trim();
+  const m2 = s.match(/^0?[.,]\d+$/);
+  if (m2) return m2[0];
+  return "";
+}
+
 function limpar(v) {
   if (v === null || v === undefined) return "";
   if (typeof v === "number") return String(v);
@@ -266,47 +284,32 @@ function limpar(v) {
 }
 
 function normal(v) {
-  return limpar(v).toLowerCase().replace(/\s+/g, " ");
+  return limpar(v).toLowerCase().replace(/\s+/g," ");
 }
 
 function sentinela(v) {
   return /^(?:n\/?a|na|não indicado|nao indicado|unknown|desconhecido|none|null|-+)$/i.test(limpar(v));
 }
 
-function aceita(v, re) {
-  const s = limpar(v);
-  if (!s || sentinela(s)) return "";
-  return re.test(s) ? s : "";
-}
-
-function validarFD(v) {
-  const s = limpar(v);
-  if (!s || sentinela(s)) return "";
-  if (/^\d+(?:[.,]\d+)?\s*%$/.test(s)) return s;
-  if(/^0?[.,]\d+$/.test(s)) return s;
-  return "";
-}
-
 function parseJSONSeguro(texto) {
-  let s = String(texto || "")
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "");
+  let s = String(texto || "").trim()
+    .replace(/^```(?:json)?\s*/i,"")
+    .replace(/\s*```$/i,"");
 
   try { return JSON.parse(s); } catch {}
 
   const a = s.indexOf("{");
   const b = s.lastIndexOf("}");
   if (a >= 0 && b > a) {
-    try { return JSON.parse(s.slice(a, b + 1)); } catch {}
+    try { return JSON.parse(s.slice(a,b+1)); } catch {}
   }
   return null;
 }
 
-function resposta(dados, status = 200) {
-  return new Response(JSON.stringify(dados, null, 2), {
+function resposta(dados,status=200) {
+  return new Response(JSON.stringify(dados,null,2),{
     status,
-    headers: {
+    headers:{
       ...CORS,
       "Content-Type":"application/json; charset=UTF-8",
       "Cache-Control":"no-store"
