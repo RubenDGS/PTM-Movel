@@ -114,6 +114,21 @@ export default {
             }
           };
 
+          // FALLBACK: se algum campo importante ficou vazio, faz uma leitura
+          // muito focada apenas nesse campo, sem voltar a interpretar a chapa toda.
+          const faltam = [];
+          for (const campo of ["bil","tensao_fase_terra","tensao_max_sistema","corrente_nominal","c1_pf","c2_pf"]) {
+            if (!limpar(combinado[campo])) faltam.push(campo);
+          }
+
+          for (const campo of faltam) {
+            const extra = await lerCampoUnico(env, image, fase, campo);
+            if (extra?.valor) {
+              combinado[campo] = extra.valor;
+              combinado.evidencias[campo] = extra.evidencia || "";
+            }
+          }
+
           resultados.push({nome,fase,resultado:validar(combinado)});
 
         } catch (e) {
@@ -150,6 +165,46 @@ async function lerGrupo(env, image, prompt, schema) {
   });
 
   return extrairObjeto(raw);
+}
+
+
+async function lerCampoUnico(env, image, fase, campo) {
+  const mapa = {
+    bil: `Procura APENAS o BIL/LI/Lightning Impulse da travessia ${fase}. Devolve o valor com unidade kV/V e uma evidência curta. Se não estiver visível, devolve vazio.`,
+    tensao_fase_terra: `Procura APENAS a tensão fase-terra/phase-to-ground/phase-earth da travessia ${fase}. Nas chapas de referência este é o valor 72,5 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
+    tensao_max_sistema: `Procura APENAS a tensão máxima do sistema/equipamento da travessia ${fase}. Nas chapas de referência este é o valor 155 kV, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
+    corrente_nominal: `Procura APENAS a corrente nominal Ir/Rated current da travessia ${fase}. Nas chapas de referência é 800 A, mas NÃO copies esse número se não estiver visível. Devolve só valor+unidade e evidência curta.`,
+    c1_pf: `Procura APENAS a capacitância C1 da travessia ${fase}. Tem de ser o valor associado a C1 e em pF. Não devolvas FD/PF. Devolve só valor+unidade e evidência curta.`,
+    c2_pf: `Procura APENAS a capacitância C2 da travessia ${fase}. Tem de ser o valor associado a C2 e em pF. Não devolvas FD/PF. Devolve só valor+unidade e evidência curta.`
+  };
+
+  const schema = {
+    type:"object",
+    additionalProperties:false,
+    properties:{
+      valor:{type:"string"},
+      evidencia:{type:"string"}
+    },
+    required:["valor","evidencia"]
+  };
+
+  const raw = await env.AI.run(MODEL,{
+    messages:[
+      {role:"system",content:"Lê apenas um único campo de uma chapa técnica. Não inventes, não calcules e não uses valores de outros campos."},
+      {role:"user",content:[
+        {type:"text",text:mapa[campo]},
+        {type:"image_url",image_url:{url:image}}
+      ]}
+    ],
+    guided_json:schema,
+    temperature:0,
+    max_tokens:300,
+    stream:false
+  });
+
+  const obj = extrairObjeto(raw);
+  if (!obj || typeof obj !== "object") return null;
+  return {valor:limpar(obj.valor), evidencia:limpar(obj.evidencia)};
 }
 
 function promptEletrico(fase) {
@@ -288,9 +343,9 @@ function validarFD(v) {
   const s = limpar(v);
   if (!s || sentinela(s)) return "";
   const m1 = s.match(/\d+(?:[.,]\d+)?\s*%/);
-  if (m1) return m1[0].trim();
+  if (m1) return m1[0].replace(/\s+/g," ").trim();
   const m2 = s.match(/^0?[.,]\d+$/);
-  if (m2) return m2[0];
+  if (m2) return m2[0] + " %";
   return "";
 }
 
